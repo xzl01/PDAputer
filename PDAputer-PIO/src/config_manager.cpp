@@ -1,5 +1,6 @@
 #include "config_manager.h"
 #include <SD.h>
+#include <M5Cardputer.h>
 
 #define CONFIG_PATH "/PDAputer/config.txt"
 #define MAX_ENTRIES 16
@@ -95,7 +96,7 @@ const char* getTimezone()     { return get("timezone"); }
 const char* getApiKey()       { return get("api_key"); }
 const char* getTimeFormat()   { return get("time_format", "12"); }
 const char* getBrightness()   { return get("brightness", "128"); }
-const char* getTone()         { return get("tone", "128"); }
+const char* getVolume()         { return get("volume", "128"); }
 
 bool set(const char* key, const char* value) {
     // Update in-memory
@@ -113,19 +114,74 @@ bool set(const char* key, const char* value) {
         strncpy(s_entries[s_count].val, value, MAX_VAL_LEN - 1);
         s_entries[s_count].val[MAX_VAL_LEN - 1] = '\0';
         s_count++;
+    } else {
+        Serial.println("[CONFIG] ERROR: Maximum config entries reached");
+        return false;
     }
 
 write_file:
-    // Rewrite config file
-    SD.remove(CONFIG_PATH);
-    File f = SD.open(CONFIG_PATH, FILE_WRITE);
-    if (!f) return false;
+    if (!SD.begin()) {
+        Serial.println("[CONFIG] ERROR: SD.begin() failed, cannot save");
+        return false;
+    }
+
+    uint8_t cardType = SD.cardType();
+    if (cardType == CARD_NONE) {
+        Serial.println("[CONFIG] ERROR: No SD card detected");
+        return false;
+    }
+
+    Serial.printf("[CONFIG] SD card type: %u\n", cardType);
+
+    // Ensure /PDAputer directory exists
+    if (!SD.exists("/PDAputer")) {
+        Serial.println("[CONFIG] /PDAputer dir missing, creating...");
+        if (!SD.mkdir("/PDAputer")) {
+            Serial.println("[CONFIG] ERROR: Failed to create /PDAputer directory");
+            return false;
+        }
+    }
+
+    String tempPath = String(CONFIG_PATH) + ".tmp";
+    SD.remove(tempPath);
+
+    File f = SD.open(tempPath.c_str(), FILE_WRITE);
+    if (!f) {
+        Serial.println("[CONFIG] ERROR: Failed to open temp config for writing");
+        Serial.printf("[CONFIG] SD type=%u cardSize=%llu\n", cardType, SD.cardSize());
+        return false;
+    }
+
     f.println("# PDAputer Configuration");
     for (int i = 0; i < s_count; i++) {
         f.printf("%s = %s\n", s_entries[i].key, s_entries[i].val);
     }
+    f.flush();
+    size_t writtenSize = f.size();
     f.close();
+
+    if (writtenSize == 0) {
+        Serial.println("[CONFIG] ERROR: Temp config write produced empty file");
+        SD.remove(tempPath);
+        return false;
+    }
+
+    SD.remove(CONFIG_PATH);
+    if (!SD.rename(tempPath.c_str(), CONFIG_PATH)) {
+        Serial.println("[CONFIG] ERROR: Failed to replace config.txt with temp file");
+        return false;
+    }
+
     Serial.printf("[CONFIG] Saved %s = %s\n", key, value);
+
+    // Verify: re-read the file to confirm it was written
+    File v = SD.open(CONFIG_PATH, FILE_READ);
+    if (v) {
+        Serial.printf("[CONFIG] Verify: file size=%d bytes\n", v.size());
+        v.close();
+    } else {
+        Serial.println("[CONFIG] WARNING: Verify failed, file not readable after write");
+    }
     return true;
 }
 

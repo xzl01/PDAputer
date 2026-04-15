@@ -16,7 +16,7 @@ namespace ConfigManager {
     const char* getApiKey();
     const char* getTimeFormat();
     const char* getBrightness();
-    const char* getTone();
+    const char* getVolume();
 
     // Generic key lookup
     const char* get(const char* key, const char* defaultVal = "");
