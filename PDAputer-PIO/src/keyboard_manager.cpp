@@ -14,6 +14,7 @@ static std::array<bool, 256> s_prev{};
 static bool s_prev_del   = false;
 static bool s_prev_enter = false;
 static bool s_prev_tab   = false;
+static bool s_prev_opt   = false;
 
 void begin(std::function<void(char)> onKeyPress) {
     s_on_key = onKeyPress;
@@ -21,6 +22,7 @@ void begin(std::function<void(char)> onKeyPress) {
     s_prev_del = false;
     s_prev_enter = false;
     s_prev_tab = false;
+    s_prev_opt = false;
 }
 
 void update() {
@@ -46,10 +48,15 @@ void update() {
         Serial.printf("[KB] dispatch TAB (0x09)\n");
         s_on_key(KEY_CODE_TAB);
     }
+    if (status.opt && !s_prev_opt) {
+        Serial.printf("[KB] dispatch OPT/GO (0x1B)\n");
+        s_on_key(0x1B);
+    }
 
     s_prev_del   = status.del;
     s_prev_enter = status.enter;
     s_prev_tab   = status.tab;
+    s_prev_opt   = status.opt;
 
     // --- Regular characters from word vector ---
     // Build current keymap, skipping chars that collide with active special keys

@@ -21,6 +21,7 @@ void begin() {
     if (ssid[0] == '\0') {
         Serial.println("[WIFI] No SSID configured, skip");
         s_state = FAILED;
+        s_last_retry = millis();
         return;
     }
 
