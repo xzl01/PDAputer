@@ -41,36 +41,30 @@ private:
     AppManager& _manager;
     AppBase* _back_app = nullptr;
 
-    // UI elements
     lv_obj_t* _screen = nullptr;
     lv_obj_t* _status_bar = nullptr;
     lv_obj_t* _term_container = nullptr;
-    lv_obj_t* _term_lines[TERM_ROWS] = {nullptr};
+    lv_obj_t* _spangroups[TERM_ROWS] = {nullptr};
     lv_obj_t* _term_ta = nullptr;
     lv_obj_t* _input_container = nullptr;
     lv_obj_t* _input_label = nullptr;
     lv_obj_t* _mode_label = nullptr;
     lv_obj_t* _prompt_label = nullptr;
 
-    // Terminal state
     char _input_buf[INPUT_MAX + 1] = {0};
     int _input_len = 0;
     bool _cursor_visible = true;
     uint32_t _cursor_timer = 0;
 
-    // Mode
     TerminalMode _mode = TerminalMode::ECHO;
 
-    // Serial
     bool _serial_inited = false;
 
-    // Telnet
     bool _net_connected = false;
     WiFiClient _telnet_client;
     char _telnet_host[64] = {0};
     uint16_t _telnet_port = 23;
 
-    // SSH
     ssh_session _ssh_session = nullptr;
     ssh_channel _ssh_channel = nullptr;
     bool _ssh_connected = false;
@@ -79,7 +73,6 @@ private:
     char _ssh_user[32] = {0};
     uint16_t _ssh_port = 22;
 
-    // Line buffer for incoming stream (with ANSI parsing)
     char _line_buf[LINE_BUF_SIZE];
     uint16_t _line_fg[LINE_BUF_SIZE] = {0};
     uint16_t _line_bg[LINE_BUF_SIZE] = {0};
@@ -88,7 +81,6 @@ private:
     char _history[TERM_HISTORY][TERM_COLS + 1] = {{0}};
     uint16_t _fg_history[TERM_HISTORY][TERM_COLS] = {{0}};
     uint16_t _bg_history[TERM_HISTORY][TERM_COLS] = {{0}};
-    char _rendered_lines[TERM_ROWS][256] = {{0}};
     int _history_count = 0;
     int _scroll_offset = 0;
     uint16_t _current_fg = 0xFFFF;
@@ -99,8 +91,19 @@ private:
     int _ansi_len = 0;
 
     // ========================================
-    // Backend interfaces
+    // Working buffers (formerly static locals)
     // ========================================
+    char _echo_buf[INPUT_MAX + 16] = {0};
+    char _unknown_cmd_buf[160] = {0};
+    char _cursor_buf[INPUT_MAX + 8] = {0};
+    char _telnet_cmd_buf[INPUT_MAX + 4] = {0};
+    char _info_buf[96] = {0};
+    char _ssh_err_buf[160] = {0};
+    char _color_buf[TERM_COLS + 1] = {0};
+    char _color_buf2[TERM_COLS + 1] = {0};
+    char _gray_buf[TERM_COLS + 1] = {0};
+
+
     void backendInit();
     void backendLoop();
     void backendSend(const char* str, int len);
@@ -111,11 +114,8 @@ private:
     void sshConnect(const char* host, const char* user, uint16_t port, const char* password);
     void sshDisconnect();
 
-    // ========================================
-    // Terminal operations
-    // ========================================
-    void printLine(const char* line);    // Add a complete line to output
-    void putChar(char c);                 // Accumulate char, flush on \n
+    void printLine(const char* line);
+    void putChar(char c);
     void handleEnter();
     void handleBackspace();
     void handleChar(char c);
@@ -128,14 +128,11 @@ private:
     void appendWrappedLine(const char* line);
     void renderTerminal();
     void pushHistoryRow(const char* text, const uint16_t* fg, const uint16_t* bg, size_t len);
-    void buildRecolorLine(int history_index, char* out, size_t out_size);
+    void renderSpanLine(int row, int history_index);
     uint16_t ansiColorTo565(int idx);
     void resetAnsiState();
     void handleAnsiSequence(const char* seq);
 
-    // ========================================
-    // Animation
-    // ========================================
     Animate _entrance;
     bool _entering = false;
 };

@@ -4,7 +4,6 @@
 #include <ui.h>
 #include <lvgl.h>
 
-// Font declarations (from lib/ui/fonts.h)
 extern const lv_font_t ui_font_noto_30;
 extern const lv_font_t ui_font_noto_20;
 extern const lv_font_t ui_font_noto_25;
@@ -19,9 +18,13 @@ extern const lv_font_t ui_font_noto_12;
 #include <cstring>
 #include <cstdlib>
 
-// ============================================================
-// ANSI / character accumulator
-// ============================================================
+static inline lv_color_t rgb565_to_lv_color(uint16_t c) {
+    return lv_color_make(
+        ((c >> 11) & 0x1F) * 255 / 31,
+        ((c >> 5) & 0x3F) * 255 / 63,
+        (c & 0x1F) * 255 / 31
+    );
+}
 
 uint16_t TerminalApp::ansiColorTo565(int idx) {
     static const uint16_t base16[16] = {
@@ -62,9 +65,9 @@ void TerminalApp::handleAnsiSequence(const char* seq) {
 
     char* saveptr = nullptr;
     char* tok = strtok_r(tmp, ";", &saveptr);
-    int vals[8];
+    int vals[12];
     int count = 0;
-    while (tok && count < 8) {
+    while (tok && count < 12) {
         vals[count++] = atoi(tok);
         tok = strtok_r(nullptr, ";", &saveptr);
     }
@@ -89,12 +92,23 @@ void TerminalApp::handleAnsiSequence(const char* seq) {
             _current_fg = 0xFFFF;
         } else if (v == 49) {
             _current_bg = 0x0000;
-        } else if (v == 38 && i + 2 < count && vals[i + 1] == 5) {
-            _current_fg = ansiColorTo565(vals[i + 2]);
-            i += 2;
-        } else if (v == 48 && i + 2 < count && vals[i + 1] == 5) {
-            _current_bg = ansiColorTo565(vals[i + 2]);
-            i += 2;
+        } else if (v == 38 || v == 48) {
+            bool is_fg = (v == 38);
+            if (i + 1 < count && vals[i + 1] == 5 && i + 2 < count) {
+                uint16_t c = ansiColorTo565(vals[i + 2]);
+                if (is_fg) _current_fg = c; else _current_bg = c;
+                i += 2;
+            } else if (i + 1 < count && vals[i + 1] == 2 && i + 4 < count) {
+                int r = vals[i + 2];
+                int g = vals[i + 3];
+                int b = vals[i + 4];
+                if (r < 0) r = 0; if (r > 255) r = 255;
+                if (g < 0) g = 0; if (g > 255) g = 255;
+                if (b < 0) b = 0; if (b > 255) b = 255;
+                uint16_t c = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
+                if (is_fg) _current_fg = c; else _current_bg = c;
+                i += 4;
+            }
         }
     }
 }
@@ -184,10 +198,6 @@ void TerminalApp::putChar(char c) {
     }
 }
 
-// ============================================================
-// Fixed-grid terminal rendering
-// ============================================================
-
 void TerminalApp::pushHistoryRow(const char* text, const uint16_t* fg, const uint16_t* bg, size_t len) {
     if (_history_count < TERM_HISTORY) {
         memset(_history[_history_count], 0, sizeof(_history[_history_count]));
@@ -245,37 +255,65 @@ void TerminalApp::appendWrappedLine(const char* line) {
     }
 }
 
-void TerminalApp::buildRecolorLine(int history_index, char* out, size_t out_size) {
-    out[0] = '\0';
-    if (history_index < 0 || history_index >= _history_count) return;
+void TerminalApp::renderSpanLine(int row, int history_index) {
+    lv_obj_t* sg = _spangroups[row];
+    if (!sg) return;
 
-    char color_tag[16];
-    bool has_open_color = false;
-    uint16_t last_fg = 0xFFFF;
-    for (int col = 0; col < TERM_COLS && _history[history_index][col]; ++col) {
-        uint16_t fg = _fg_history[history_index][col];
-        if (fg != last_fg) {
-            if (has_open_color) strlcat(out, "#", out_size);
-            int r = ((fg >> 11) & 0x1F) * 255 / 31;
-            int g = ((fg >> 5) & 0x3F) * 255 / 63;
-            int b = (fg & 0x1F) * 255 / 31;
-            snprintf(color_tag, sizeof(color_tag), "#%02x%02x%02x ", r, g, b);
-            strlcat(out, color_tag, out_size);
-            last_fg = fg;
-            has_open_color = true;
+    lv_spangroup_del_span(sg, lv_spangroup_get_child(sg, 0));
+    while (lv_spangroup_get_child(sg, 0)) {
+        lv_spangroup_del_span(sg, lv_spangroup_get_child(sg, 0));
+    }
+
+    if (history_index < 0 || history_index >= _history_count) {
+        lv_span_t* span = lv_spangroup_new_span(sg);
+        if (span) {
+            lv_span_set_text(span, "");
         }
+        return;
+    }
 
-        char c = _history[history_index][col];
-        if (c == '#') {
-            strlcat(out, "##", out_size);
-        } else if (c == '\\') {
-            strlcat(out, "\\\\", out_size);
-        } else {
-            char ch[2] = {c, '\0'};
-            strlcat(out, ch, out_size);
+    const char* text = _history[history_index];
+    const uint16_t* fg_arr = _fg_history[history_index];
+    const uint16_t* bg_arr = _bg_history[history_index];
+
+    int text_len = 0;
+    while (text_len < TERM_COLS && text[text_len]) text_len++;
+
+    if (text_len == 0) {
+        lv_span_t* span = lv_spangroup_new_span(sg);
+        if (span) {
+            lv_span_set_text(span, " ");
+            lv_style_set_text_color(&span->style, rgb565_to_lv_color(0xFFFF));
+            lv_style_set_bg_color(&span->style, rgb565_to_lv_color(0x0000));
+            lv_style_set_bg_opa(&span->style, LV_OPA_COVER);
+        }
+        return;
+    }
+
+    int col = 0;
+    while (col < text_len) {
+        uint16_t cur_fg = fg_arr[col];
+        uint16_t cur_bg = bg_arr[col];
+
+        int run_start = col;
+        while (col < text_len && fg_arr[col] == cur_fg && bg_arr[col] == cur_bg) {
+            col++;
+        }
+        int run_len = col - run_start;
+
+        char buf[TERM_COLS + 1];
+        if (run_len > TERM_COLS) run_len = TERM_COLS;
+        memcpy(buf, text + run_start, run_len);
+        buf[run_len] = '\0';
+
+        lv_span_t* span = lv_spangroup_new_span(sg);
+        if (span) {
+            lv_span_set_text(span, buf);
+            lv_style_set_text_color(&span->style, rgb565_to_lv_color(cur_fg));
+            lv_style_set_bg_color(&span->style, rgb565_to_lv_color(cur_bg));
+            lv_style_set_bg_opa(&span->style, LV_OPA_COVER);
         }
     }
-    if (has_open_color) strlcat(out, "#", out_size);
 }
 
 void TerminalApp::renderTerminal() {
@@ -290,12 +328,16 @@ void TerminalApp::renderTerminal() {
 
     for (int row = 0; row < TERM_ROWS; ++row) {
         int idx = start + row;
-        if (!_term_lines[row]) continue;
+        if (!_spangroups[row]) continue;
         if (idx < _history_count) {
-            buildRecolorLine(idx, _rendered_lines[row], sizeof(_rendered_lines[row]));
-            lv_label_set_text(_term_lines[row], _rendered_lines[row]);
+            renderSpanLine(row, idx);
         } else {
-            lv_label_set_text(_term_lines[row], "");
+            lv_spangroup_del_span(_spangroups[row], lv_spangroup_get_child(_spangroups[row], 0));
+            while (lv_spangroup_get_child(_spangroups[row], 0)) {
+                lv_spangroup_del_span(_spangroups[row], lv_spangroup_get_child(_spangroups[row], 0));
+            }
+            lv_span_t* span = lv_spangroup_new_span(_spangroups[row]);
+            if (span) lv_span_set_text(span, "");
         }
     }
 }
@@ -307,10 +349,6 @@ void TerminalApp::printLine(const char* line) {
     }
     putChar('\n');
 }
-
-// ============================================================
-// Lifecycle
-// ============================================================
 
 void TerminalApp::onCreate() {
     _input_len = 0;
@@ -390,21 +428,25 @@ void TerminalApp::onCreate() {
 
     _term_ta = nullptr;
     for (int i = 0; i < TERM_ROWS; ++i) {
-        _term_lines[i] = lv_label_create(_term_container);
-        lv_obj_set_width(_term_lines[i], LV_PCT(100));
-        lv_obj_set_pos(_term_lines[i], 0, i * 12);
-        lv_label_set_text(_term_lines[i], "");
-        lv_label_set_long_mode(_term_lines[i], LV_LABEL_LONG_CLIP);
-        lv_label_set_recolor(_term_lines[i], true);
-        lv_obj_set_style_bg_color(_term_lines[i], lv_color_hex(0x000000), 0);
-        lv_obj_set_style_bg_opa(_term_lines[i], LV_OPA_TRANSP, 0);
-        lv_obj_set_style_text_color(_term_lines[i], lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(_term_lines[i], &ui_font_noto_12, 0);
-        lv_obj_set_style_border_width(_term_lines[i], 0, 0);
-        lv_obj_set_style_pad_left(_term_lines[i], 0, 0);
-        lv_obj_set_style_pad_right(_term_lines[i], 0, 0);
-        lv_obj_set_style_pad_top(_term_lines[i], 0, 0);
-        lv_obj_set_style_pad_bottom(_term_lines[i], 0, 0);
+        _spangroups[i] = lv_spangroup_create(_term_container);
+        lv_obj_set_width(_spangroups[i], LV_PCT(100));
+        lv_obj_set_pos(_spangroups[i], 0, i * 12);
+        lv_obj_set_height(_spangroups[i], 12);
+        lv_spangroup_set_mode(_spangroups[i], LV_SPAN_MODE_FIXED);
+        lv_obj_set_style_text_font(_spangroups[i], &ui_font_noto_12, 0);
+        lv_obj_set_style_bg_color(_spangroups[i], lv_color_hex(0x000000), 0);
+        lv_obj_set_style_bg_opa(_spangroups[i], LV_OPA_COVER, 0);
+        lv_obj_set_style_text_color(_spangroups[i], lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_border_width(_spangroups[i], 0, 0);
+        lv_obj_set_style_pad_left(_spangroups[i], 0, 0);
+        lv_obj_set_style_pad_right(_spangroups[i], 0, 0);
+        lv_obj_set_style_pad_top(_spangroups[i], 0, 0);
+        lv_obj_set_style_pad_bottom(_spangroups[i], 0, 0);
+        lv_obj_set_style_pad_row(_spangroups[i], 0, 0);
+        lv_obj_set_style_pad_column(_spangroups[i], 0, 0);
+
+        lv_span_t* placeholder = lv_spangroup_new_span(_spangroups[i]);
+        if (placeholder) lv_span_set_text(placeholder, "");
     }
 
     _input_container = lv_obj_create(_screen);
@@ -450,8 +492,8 @@ void TerminalApp::onCreate() {
         lv_obj_get_width(_term_container), lv_obj_get_height(_term_container),
         lv_obj_get_width(_input_container), lv_obj_get_height(_input_container));
 
-    printLine("Terminal v0.3");
-    printLine("Modes: ECHO | UART | TELNET");
+    printLine("\x1b[38;5;118mTerminal\x1b[0m \x1b[38;5;220mv0.4\x1b[0m \x1b[38;5;246m256-color\x1b[0m");
+    printLine("Modes: ECHO | UART | TELNET | SSH");
     printLine("TAB=mode | empty ENTER=back");
     printLine("Fn+; up | Fn+. down");
     printLine("");
@@ -475,7 +517,6 @@ void TerminalApp::onUpdate() {
 
     backendLoop();
 
-    // Cursor blink
     uint32_t now = millis();
     if (now - _cursor_timer > 500) {
         _cursor_timer = now;
@@ -483,14 +524,12 @@ void TerminalApp::onUpdate() {
         updateCursor();
     }
 
-    // Serial RX
     if (_mode == TerminalMode::UART && _serial_inited) {
         while (Serial1.available()) {
             putChar(Serial1.read());
         }
     }
 
-    // Telnet RX
     if (_mode == TerminalMode::TELNET && _net_connected) {
         while (_telnet_client.available()) {
             putChar(_telnet_client.read());
@@ -501,7 +540,6 @@ void TerminalApp::onUpdate() {
         }
     }
 
-    // SSH RX
     if (_mode == TerminalMode::SSH && _ssh_connected && _ssh_channel) {
         char buffer[128];
         int n = 0;
@@ -524,14 +562,7 @@ void TerminalApp::onUpdate() {
 
 void TerminalApp::onDestroy() {
     backendClose();
-    // NOTE: Do NOT delete _screen. All other apps (Settings, Music, FMRadio, etc.)
-    // do NOT delete their screen objects in onDestroy. LVGL manages screen lifecycle.
-    // Deleting here causes lv_scr_load() to cache stale screen on second entry.
 }
-
-// ============================================================
-// Keyboard input
-// ============================================================
 
 void TerminalApp::onKeyPressed(char key) {
     auto& kstate = M5Cardputer.Keyboard.keysState();
@@ -550,7 +581,6 @@ void TerminalApp::onKeyPressed(char key) {
         }
     }
 
-    // Long press ENTER on empty input = back to main menu
     if (key == KEY_CODE_ENTER && _input_len == 0) {
         if (_back_app) _manager.switchApp(_back_app);
         return;
@@ -567,10 +597,6 @@ void TerminalApp::onKeyPressed(char key) {
     }
 }
 
-// ============================================================
-// Terminal operations
-// ============================================================
-
 void TerminalApp::handleEnter() {
     if (_input_len == 0) {
         printLine("$ ");
@@ -578,12 +604,9 @@ void TerminalApp::handleEnter() {
         return;
     }
 
-    // Echo command
-    static char echo_buf[INPUT_MAX + 16];
-    snprintf(echo_buf, sizeof(echo_buf), "$ %s", _input_buf);
-    printLine(echo_buf);
+        snprintf(_echo_buf, sizeof(_echo_buf), "$ %s", _input_buf);
+    printLine(_echo_buf);
 
-    // Command parser for TELNET mode
     if (_mode == TerminalMode::TELNET) {
         if (strncmp(_input_buf, "connect ", 8) == 0) {
             const char* arg = _input_buf + 8;
@@ -651,10 +674,9 @@ void TerminalApp::handleEnter() {
         }
     }
 
-    // ECHO mode commands
     if (_mode == TerminalMode::ECHO) {
         if (strcmp(_input_buf, "help") == 0) {
-            printLine("\x1b[38;5;45mCommands:\x1b[0m \x1b[38;5;220mhelp\x1b[0m, \x1b[38;5;220mclear\x1b[0m, \x1b[38;5;220mabout\x1b[0m, \x1b[38;5;220mff\x1b[0m, \x1b[38;5;220mdemo\x1b[0m");
+            printLine("\x1b[38;5;45mCommands:\x1b[0m \x1b[38;5;220mhelp\x1b[0m, \x1b[38;5;220mclear\x1b[0m, \x1b[38;5;220mabout\x1b[0m, \x1b[38;5;220mff\x1b[0m, \x1b[38;5;220mdemo\x1b[0m, \x1b[38;5;220mcolormap\x1b[0m");
         } else if (strcmp(_input_buf, "clear") == 0) {
             _history_count = 0;
             _scroll_offset = 0;
@@ -662,7 +684,8 @@ void TerminalApp::handleEnter() {
             clearInput();
             return;
         } else if (strcmp(_input_buf, "about") == 0) {
-            printLine("\x1b[38;5;81mTerminal\x1b[0m \x1b[38;5;220mv0.3\x1b[0m for \x1b[38;5;118mPDAputer\x1b[0m");
+            printLine("\x1b[38;5;81mTerminal\x1b[0m \x1b[38;5;220mv0.4\x1b[0m for \x1b[38;5;118mPDAputer\x1b[0m");
+            printLine("\x1b[38;5;246m256-color\x1b[0m \x1b[38;5;208m+ 24-bit truecolor\x1b[0m");
         } else if (strcmp(_input_buf, "ff") == 0 || strcmp(_input_buf, "fastfetch") == 0 || strcmp(_input_buf, "neofetch") == 0) {
             printLine("\x1b[38;5;39mPDAputer\x1b[0m \x1b[38;5;219mfastfetch\x1b[0m");
             printLine("\x1b[38;5;45mos\x1b[0m    \x1b[38;5;147mPDA OS\x1b[0m");
@@ -676,18 +699,51 @@ void TerminalApp::handleEnter() {
             printLine("\x1b[38;5;226myellow\x1b[0m \x1b[38;5;201mpink\x1b[0m \x1b[38;5;51mcyan\x1b[0m");
             printLine("\x1b[48;5;236;38;5;15m bg test \x1b[0m \x1b[48;5;52;38;5;231m ansi \x1b[0m");
             printLine("\x1b[38;5;208m256-color\x1b[0m \x1b[38;5;141mdemo\x1b[0m ready");
+            printLine("\x1b[38;2;255;128;0m24-bit\x1b[0m \x1b[38;2;0;200;255mtruecolor\x1b[0m \x1b[38;2;180;0;255mworks!\x1b[0m");
+        } else if (strcmp(_input_buf, "colormap") == 0) {
+            for (int row = 0; row < 4; ++row) {
+                                int pos = 0;
+                for (int col = 0; col < 6; ++col) {
+                    int idx = 16 + row * 6 + col;
+                    if (pos + 5 > TERM_COLS) break;
+                    snprintf(_color_buf + pos, sizeof(_color_buf) - pos, "\x1b[48;5;%dm  \x1b[0m", idx);
+                    pos += strlen(_color_buf + pos);
+                }
+                _color_buf[pos] = '\0';
+                printLine(_color_buf);
+            }
+            for (int row = 0; row < 4; ++row) {
+                                int pos = 0;
+                for (int col = 0; col < 6; ++col) {
+                    int idx = 40 + row * 6 + col;
+                    if (pos + 5 > TERM_COLS) break;
+                    snprintf(_color_buf + pos, sizeof(_color_buf) - pos, "\x1b[48;5;%dm  \x1b[0m", idx);
+                    pos += strlen(_color_buf + pos);
+                }
+                _color_buf[pos] = '\0';
+                printLine(_color_buf);
+            }
+            {
+                                int pos = 0;
+                for (int i = 0; i < 8; ++i) {
+                    int idx = 232 + i;
+                    if (pos + 5 > TERM_COLS) break;
+                    snprintf(_gray_buf + pos, sizeof(_gray_buf) - pos, "\x1b[48;5;%dm  \x1b[0m", idx);
+                    pos += strlen(_gray_buf + pos);
+                }
+                _gray_buf[pos] = '\0';
+                printLine(_gray_buf);
+            }
         } else if (strncmp(_input_buf, "echo ", 5) == 0) {
             printLine(_input_buf + 5);
         } else {
-            static char buf[160];
-            snprintf(buf, sizeof(buf), "unknown: %s", _input_buf);
-            printLine(buf);
+                        snprintf(_unknown_cmd_buf, sizeof(_unknown_cmd_buf), "unknown: %s", _input_buf);
+            printLine(_unknown_cmd_buf);
         }
         clearInput();
         return;
     }
 
-    // UART/TELNET/SSH: send with newline
     backendSend(_input_buf, _input_len);
     clearInput();
 }
@@ -715,12 +771,11 @@ void TerminalApp::clearInput() {
 
 void TerminalApp::updateCursor() {
     if (!_input_label) return;
-    static char cur_buf[INPUT_MAX + 8];
-    strcpy(cur_buf, _input_buf);
+        strcpy(_cursor_buf, _input_buf);
     if (_cursor_visible && _input_len < INPUT_MAX - 1) {
-        strcat(cur_buf, "_");
+        strcat(_cursor_buf, "_");
     }
-    lv_textarea_set_text(_input_label, cur_buf);
+    lv_textarea_set_text(_input_label, _cursor_buf);
     lv_textarea_set_cursor_pos(_input_label, LV_TEXTAREA_CURSOR_LAST);
 }
 
@@ -767,10 +822,6 @@ void TerminalApp::setMode(TerminalMode m) {
     updateStatus();
 }
 
-// ============================================================
-// Backend
-// ============================================================
-
 void TerminalApp::backendInit() {
     switch (_mode) {
         case TerminalMode::UART: {
@@ -801,7 +852,6 @@ void TerminalApp::backendInit() {
 }
 
 void TerminalApp::backendLoop() {
-    // RX handled in onUpdate via putChar()
 }
 
 void TerminalApp::backendSend(const char* str, int len) {
@@ -811,11 +861,10 @@ void TerminalApp::backendSend(const char* str, int len) {
             break;
         case TerminalMode::TELNET:
             if (_net_connected && _telnet_client.connected()) {
-                static char cmd[INPUT_MAX + 4];
-                int n = len < (int)sizeof(cmd) - 2 ? len : sizeof(cmd) - 2;
-                memcpy(cmd, str, n);
-                cmd[n] = '\r'; cmd[n+1] = '\n';
-                _telnet_client.write((const uint8_t*)cmd, n + 2);
+                                int n = len < (int)sizeof(_telnet_cmd_buf) - 2 ? len : sizeof(_telnet_cmd_buf) - 2;
+                memcpy(_telnet_cmd_buf, str, n);
+                _telnet_cmd_buf[n] = '\r'; _telnet_cmd_buf[n+1] = '\n';
+                _telnet_client.write((const uint8_t*)_telnet_cmd_buf, n + 2);
             } else {
                 printLine("[TELNET] Not connected");
             }
@@ -862,9 +911,8 @@ bool TerminalApp::backendConnected() {
 void TerminalApp::telnetConnect(const char* host, uint16_t port) {
     telnetDisconnect();
 
-    static char info[96];
-    snprintf(info, sizeof(info), "Connecting to %s:%d...", host, port);
-    printLine(info);
+        snprintf(_info_buf, sizeof(_info_buf), "Connecting to %s:%d...", host, port);
+    printLine(_info_buf);
 
     if (_telnet_client.connect(host, port)) {
         strncpy(_telnet_host, host, sizeof(_telnet_host) - 1);
@@ -904,9 +952,8 @@ void TerminalApp::sshConnect(const char* host, const char* user, uint16_t port, 
     ssh_options_set(_ssh_session, SSH_OPTIONS_LOG_VERBOSITY, &verbosity);
 
     if (ssh_connect(_ssh_session) != SSH_OK) {
-        static char err[160];
-        snprintf(err, sizeof(err), "[SSH] Connect failed: %s", ssh_get_error(_ssh_session));
-        printLine(err);
+                snprintf(_ssh_err_buf, sizeof(_ssh_err_buf), "[SSH] Connect failed: %s", ssh_get_error(_ssh_session));
+        printLine(_ssh_err_buf);
         sshDisconnect();
         updateStatus();
         return;
@@ -914,9 +961,8 @@ void TerminalApp::sshConnect(const char* host, const char* user, uint16_t port, 
 
     int auth = ssh_userauth_password(_ssh_session, user, password);
     if (auth != SSH_AUTH_SUCCESS) {
-        static char err[160];
-        snprintf(err, sizeof(err), "[SSH] Auth failed: %s", ssh_get_error(_ssh_session));
-        printLine(err);
+                snprintf(_ssh_err_buf, sizeof(_ssh_err_buf), "[SSH] Auth failed: %s", ssh_get_error(_ssh_session));
+        printLine(_ssh_err_buf);
         sshDisconnect();
         updateStatus();
         return;
@@ -933,9 +979,8 @@ void TerminalApp::sshConnect(const char* host, const char* user, uint16_t port, 
     if (ssh_channel_open_session(_ssh_channel) != SSH_OK ||
         ssh_channel_request_pty_size(_ssh_channel, "xterm", 80, 24) != SSH_OK ||
         ssh_channel_request_shell(_ssh_channel) != SSH_OK) {
-        static char err[160];
-        snprintf(err, sizeof(err), "[SSH] Shell failed: %s", ssh_get_error(_ssh_session));
-        printLine(err);
+                snprintf(_ssh_err_buf, sizeof(_ssh_err_buf), "[SSH] Shell failed: %s", ssh_get_error(_ssh_session));
+        printLine(_ssh_err_buf);
         sshDisconnect();
         updateStatus();
         return;
