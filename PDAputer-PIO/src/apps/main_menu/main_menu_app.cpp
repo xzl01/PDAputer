@@ -35,7 +35,7 @@ static const int RAW_TO_SLOT[] = { 3, 4, 5, -1, -1, -1, -1, -1, -1, 1, 2 };
 static const AppDef APP_DEFS[] = {
     { "Notes",     0xff2a1800, 0xffffcc66 },  // 0 - default
     { "Music",     0xff002b4a, 0xff55b4ff },  // 1
-    { "Web Radio", 0xff0a2800, 0xff2ef900 },  // 2
+    { "Terminal",  0xff0a2800, 0xff2ef900 },  // 2
     { "FM Radio",  0xff2c1e00, 0xffffaa00 },  // 3
     { "AI Chat",   0xff4f0f21, 0xffff9b9d },  // 4
     { "Games",     0xff3a0830, 0xffff7acd },  // 5
@@ -82,7 +82,7 @@ void MainMenuApp::onCreate() {
     _is_scrolling = false;
 
     // Sync volume from config
-    _saved_volume = atoi(ConfigManager::getTone());
+    _saved_volume = atoi(ConfigManager::getVolume());
     if (_saved_volume < 0) _saved_volume = 0;
     if (_saved_volume > 255) _saved_volume = 255;
     _muted = (_saved_volume == 0);

@@ -4,7 +4,8 @@
 #include "../../app_manager/app_manager.h"
 #include <lvgl.h>
 #include <SD.h>
-#include <driver/i2s_std.h>
+#include <driver/i2s.h>
+typedef i2s_port_t* i2s_chan_handle_t;
 
 struct __attribute__((packed)) wav_header_t {
     char     RIFF[4];

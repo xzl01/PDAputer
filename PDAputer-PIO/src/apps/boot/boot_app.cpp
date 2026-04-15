@@ -6,6 +6,7 @@
 #include "sd_manager.h"
 #include "config_manager.h"
 #include "wifi_manager.h"
+#include "font_manager.h"
 
 char BootApp::randomChar() {
     static const char chars[] = "abcdefghijklmnopqrstuvwxyz0123456789!@#$%&*";
@@ -130,6 +131,7 @@ void BootApp::updateWaiting() {
         _sd_mount_attempted = true;
         SDManager::begin();
         ConfigManager::load();
+        FontManager::begin();  // Load TinyTF CJK font from SD as fallback
         WifiManager::begin(); // Non-blocking, connects in background
     }
 

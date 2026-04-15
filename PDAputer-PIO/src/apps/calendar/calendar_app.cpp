@@ -21,7 +21,7 @@ void CalendarApp::onDestroy() {}
 
 void CalendarApp::onKeyPressed(char key) {
     if (key == '`') {
-        if (atoi(ConfigManager::getTone()) > 0) M5.Speaker.tone(3000, 20);
+        if (atoi(ConfigManager::getVolume()) > 0) M5.Speaker.tone(3000, 20);
         if (_back_app) _manager.switchApp(_back_app);
     }
 }

@@ -12,6 +12,7 @@
 #include "apps/music/music_app.h"
 #include "apps/settings/settings_app.h"
 #include "apps/calendar/calendar_app.h"
+#include "apps/terminal/terminal_app.h"
 #include <battery_manager.h>
 #include <keyboard_manager.h>
 
@@ -25,7 +26,7 @@ FMRadioApp fmRadioApp(appManager);
 MusicApp musicApp(appManager);
 SettingsApp settingsApp(appManager);
 CalendarApp calendarApp(appManager);
-
+TerminalApp terminalApp(appManager);
 
 void setup() {
     Serial.begin(115200);
@@ -57,6 +58,10 @@ void setup() {
     // Music: index 1
     musicApp.setBackApp(&mainMenuApp);
     mainMenuApp.setAppTarget(1, &musicApp);
+
+    // Terminal: index 2
+    terminalApp.setBackApp(&mainMenuApp);
+    mainMenuApp.setAppTarget(2, &terminalApp);
 
     // FM Radio: index 3
     fmRadioApp.setBackApp(&mainMenuApp);

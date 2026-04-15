@@ -12,6 +12,14 @@ extern const lv_font_t ui_font_cf_20;
 extern const lv_font_t ui_font_cf_25;
 extern const lv_font_t ui_font_cf_30;
 
+extern const lv_font_t ui_font_noto_45;
+extern const lv_font_t ui_font_noto_30;
+extern const lv_font_t ui_font_noto_20;
+extern const lv_font_t ui_font_noto_25;
+extern const lv_font_t ui_font_noto_14;
+extern const lv_font_t ui_font_noto_16;
+extern const lv_font_t ui_font_noto_12;
+
 #ifndef EXT_FONT_DESC_T
 #define EXT_FONT_DESC_T
 typedef struct _ext_font_desc_t {

@@ -7,12 +7,31 @@
 #include <config_manager.h>
 #include <SD.h>
 #include <MP3DecoderHelix.h>
+#if __has_include(<driver/i2s_std.h>)
 #include <driver/i2s_std.h>
+#else
+#include <driver/i2s.h>
+#endif
 
 // I2S pins for M5Cardputer
 #define I2S_DOUT_PIN 42
 #define I2S_BCLK_PIN 41
 #define I2S_LRCK_PIN 43
+
+#if !__has_include(<driver/i2s_std.h>)
+static inline void i2s_del_channel(i2s_chan_handle_t chan) {
+    if (chan) i2s_driver_uninstall(*chan);
+}
+static inline esp_err_t i2s_channel_disable(i2s_chan_handle_t chan) {
+    return chan ? i2s_stop(*chan) : ESP_OK;
+}
+static inline esp_err_t i2s_channel_enable(i2s_chan_handle_t chan) {
+    return chan ? i2s_start(*chan) : ESP_OK;
+}
+static inline esp_err_t i2s_channel_write(i2s_chan_handle_t chan, const void* src, size_t size, size_t* bytes_written, TickType_t ticks_to_wait) {
+    return chan ? i2s_write(*chan, src, size, bytes_written, ticks_to_wait) : ESP_FAIL;
+}
+#endif
 
 // ============================================================
 // LVGL timer callback
@@ -30,6 +49,7 @@ void MusicApp::animTimerCb(lv_timer_t* t) {
 void MusicApp::setupI2S(uint32_t sample_rate, bool stereo) {
     teardownI2S();
 
+#if __has_include(<driver/i2s_std.h>)
     i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
     chan_cfg.dma_desc_num = 8;
     chan_cfg.dma_frame_num = 256;
@@ -52,6 +72,34 @@ void MusicApp::setupI2S(uint32_t sample_rate, bool stereo) {
 
     i2s_channel_init_std_mode(_i2s_tx, &std_cfg);
     i2s_channel_enable(_i2s_tx);
+#else
+    static i2s_port_t port = I2S_NUM_0;
+    _i2s_tx = &port;
+
+    i2s_config_t cfg = {};
+    cfg.mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX);
+    cfg.sample_rate = sample_rate;
+    cfg.bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT;
+    cfg.channel_format = stereo ? I2S_CHANNEL_FMT_RIGHT_LEFT : I2S_CHANNEL_FMT_ONLY_RIGHT;
+    cfg.communication_format = I2S_COMM_FORMAT_STAND_I2S;
+    cfg.intr_alloc_flags = 0;
+    cfg.dma_buf_count = 8;
+    cfg.dma_buf_len = 256;
+    cfg.use_apll = false;
+    cfg.tx_desc_auto_clear = true;
+    cfg.fixed_mclk = 0;
+
+    i2s_pin_config_t pins = {};
+    pins.bck_io_num = I2S_BCLK_PIN;
+    pins.ws_io_num = I2S_LRCK_PIN;
+    pins.data_out_num = I2S_DOUT_PIN;
+    pins.data_in_num = I2S_PIN_NO_CHANGE;
+
+    i2s_driver_install(port, &cfg, 0, NULL);
+    i2s_set_pin(port, &pins);
+    i2s_zero_dma_buffer(port);
+    i2s_start(port);
+#endif
     _i2s_running = true;
 }
 
@@ -79,10 +127,16 @@ static void mp3DataCb(MP3FrameInfo &info, short *pcm, size_t len, void *ref) {
     if (len == 0 || !s_i2s_tx) return;
 
     if (s_first_frame) {
+#if __has_include(<driver/i2s_std.h>)
         i2s_channel_disable(s_i2s_tx);
         i2s_std_clk_config_t clk = I2S_STD_CLK_DEFAULT_CONFIG(info.samprate);
         i2s_channel_reconfig_std_clock(s_i2s_tx, &clk);
         i2s_channel_enable(s_i2s_tx);
+#else
+        if (s_i2s_tx) {
+            i2s_set_sample_rates(*s_i2s_tx, info.samprate);
+        }
+#endif
         s_first_frame = false;
         Serial.printf("[MUSIC] MP3: %dHz %dch %dkbps\n",
                       info.samprate, info.nChans, info.bitrate / 1000);
@@ -570,7 +624,7 @@ void MusicApp::onKeyPressed(char key) {
     Serial.printf("[MUSIC] key '%c' playing=%d active=%d i2s=%d remain=%ld\n",
                   key, _playing, _active, _i2s_running, (long)_data_remaining);
     if (key == '`') {
-        if (atoi(ConfigManager::getTone()) > 0) M5.Speaker.tone(3000, 20);
+        if (atoi(ConfigManager::getVolume()) > 0) M5.Speaker.tone(3000, 20);
         if (_back_app) _manager.switchApp(_back_app);
         return;
     }
