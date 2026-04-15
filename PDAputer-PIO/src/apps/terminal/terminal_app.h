@@ -36,7 +36,7 @@ private:
     static constexpr int TERM_COLS = 30;
     static constexpr int TERM_ROWS = 8;
     static constexpr int TERM_HISTORY = 128;
-    static constexpr int ANSI_BUF_SIZE = 32;
+    static constexpr int ANSI_BUF_SIZE = 64;
 
     AppManager& _manager;
     AppBase* _back_app = nullptr;
@@ -84,6 +84,7 @@ private:
     uint16_t _line_fg[LINE_BUF_SIZE] = {0};
     uint16_t _line_bg[LINE_BUF_SIZE] = {0};
     int _line_len = 0;
+    int _cursor_col = 0;
     char _history[TERM_HISTORY][TERM_COLS + 1] = {{0}};
     uint16_t _fg_history[TERM_HISTORY][TERM_COLS] = {{0}};
     uint16_t _bg_history[TERM_HISTORY][TERM_COLS] = {{0}};

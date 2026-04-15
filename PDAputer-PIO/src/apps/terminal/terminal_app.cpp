@@ -135,29 +135,52 @@ void TerminalApp::putChar(char c) {
         return;
     }
 
-    if (c == '\n' || c == '\r') {
+    if (c == '\r') {
+        _cursor_col = 0;
+        return;
+    }
+
+    if (c == '\n') {
         if (_line_len > 0) {
             _line_buf[_line_len] = '\0';
             appendWrappedLine(_line_buf);
-            _scroll_offset = 0;
-            renderTerminal();
-            _line_len = 0;
         } else {
-            printLine("");
+            uint16_t fg[TERM_COLS];
+            uint16_t bg[TERM_COLS];
+            for (int i = 0; i < TERM_COLS; ++i) {
+                fg[i] = _current_fg;
+                bg[i] = _current_bg;
+            }
+            pushHistoryRow("", fg, bg, 0);
         }
+        _scroll_offset = 0;
+        renderTerminal();
+        _line_len = 0;
+        _cursor_col = 0;
+        _line_buf[0] = '\0';
         return;
     }
 
     if (c == '\b') {
-        if (_line_len > 0) _line_len--;
+        if (_cursor_col > 0) {
+            _cursor_col--;
+            if (_cursor_col < _line_len) {
+                _line_len = _cursor_col;
+                _line_buf[_line_len] = '\0';
+            }
+        }
         return;
     }
 
-    if (c >= 32 && _line_len < LINE_BUF_SIZE - 1) {
-        _line_buf[_line_len] = c;
-        _line_fg[_line_len] = _current_fg;
-        _line_bg[_line_len] = _current_bg;
-        _line_len++;
+    if (c >= 32 && _cursor_col < LINE_BUF_SIZE - 1) {
+        _line_buf[_cursor_col] = c;
+        _line_fg[_cursor_col] = _current_fg;
+        _line_bg[_cursor_col] = _current_bg;
+        _cursor_col++;
+        if (_cursor_col > _line_len) {
+            _line_len = _cursor_col;
+            _line_buf[_line_len] = '\0';
+        }
     }
 }
 
@@ -203,8 +226,8 @@ void TerminalApp::appendWrappedLine(const char* line) {
         return;
     }
 
-    const uint16_t* src_fg = (_line_len > 0) ? _line_fg : nullptr;
-    const uint16_t* src_bg = (_line_len > 0) ? _line_bg : nullptr;
+    const uint16_t* src_fg = (len > 0) ? _line_fg : nullptr;
+    const uint16_t* src_bg = (len > 0) ? _line_bg : nullptr;
 
     for (size_t i = 0; i < len; i += TERM_COLS) {
         char row[TERM_COLS + 1];
@@ -241,8 +264,16 @@ void TerminalApp::buildRecolorLine(int history_index, char* out, size_t out_size
             last_fg = fg;
             has_open_color = true;
         }
-        char ch[2] = {_history[history_index][col], '\0'};
-        strlcat(out, ch, out_size);
+
+        char c = _history[history_index][col];
+        if (c == '#') {
+            strlcat(out, "##", out_size);
+        } else if (c == '\\') {
+            strlcat(out, "\\\\", out_size);
+        } else {
+            char ch[2] = {c, '\0'};
+            strlcat(out, ch, out_size);
+        }
     }
     if (has_open_color) strlcat(out, "#", out_size);
 }
@@ -270,9 +301,11 @@ void TerminalApp::renderTerminal() {
 }
 
 void TerminalApp::printLine(const char* line) {
-    appendWrappedLine(line);
-    _scroll_offset = 0;
-    renderTerminal();
+    if (!line) line = "";
+    for (const char* p = line; *p; ++p) {
+        putChar(*p);
+    }
+    putChar('\n');
 }
 
 // ============================================================
@@ -294,9 +327,13 @@ void TerminalApp::onCreate() {
     _ssh_connected = false;
     _ssh_waiting_password = false;
     _line_len = 0;
+    _cursor_col = 0;
     _history_count = 0;
     _scroll_offset = 0;
     memset(_history, 0, sizeof(_history));
+    memset(_line_buf, 0, sizeof(_line_buf));
+    memset(_line_fg, 0xFF, sizeof(_line_fg));
+    memset(_line_bg, 0x00, sizeof(_line_bg));
     _entering = false;
     _cursor_visible = true;
     _cursor_timer = millis();
@@ -627,9 +664,9 @@ void TerminalApp::handleEnter() {
         } else if (strcmp(_input_buf, "about") == 0) {
             printLine("\x1b[38;5;81mTerminal\x1b[0m \x1b[38;5;220mv0.3\x1b[0m for \x1b[38;5;118mPDAputer\x1b[0m");
         } else if (strcmp(_input_buf, "ff") == 0 || strcmp(_input_buf, "fastfetch") == 0 || strcmp(_input_buf, "neofetch") == 0) {
-            printLine("\x1b[38;5;39m /\\\x1b[0m    \x1b[38;5;219mPDAputer\x1b[0m");
-            printLine("\x1b[38;5;45m/  \\\x1b[0m   \x1b[38;5;147mPDA OS\x1b[0m");
-            printLine("\x1b[38;5;51m\\__/\x1b[0m   \x1b[38;5;118mCardputer S3\x1b[0m");
+            printLine("\x1b[38;5;39mPDAputer\x1b[0m \x1b[38;5;219mfastfetch\x1b[0m");
+            printLine("\x1b[38;5;45mos\x1b[0m    \x1b[38;5;147mPDA OS\x1b[0m");
+            printLine("\x1b[38;5;51mhost\x1b[0m  \x1b[38;5;118mCardputer S3\x1b[0m");
             printLine("\x1b[38;5;220mcpu\x1b[0m   \x1b[38;5;252mESP32-S3 @240\x1b[0m");
             printLine("\x1b[38;5;220mmem\x1b[0m   \x1b[38;5;252m320KB / 8MB\x1b[0m");
             printLine("\x1b[38;5;220mdisp\x1b[0m  \x1b[38;5;252m240x135 TFT\x1b[0m");
