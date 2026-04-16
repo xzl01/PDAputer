@@ -31,11 +31,15 @@ private:
     static constexpr int RING_BUF_SIZE = 32768;
 
     lv_obj_t* _screen = nullptr;
-    lv_obj_t* _title_label = nullptr;
-    lv_obj_t* _status_label = nullptr;
-    lv_obj_t* _station_label = nullptr;
-    lv_obj_t* _volume_label = nullptr;
-    lv_obj_t* _panel = nullptr;
+    lv_obj_t* _label_station = nullptr;
+    lv_obj_t* _label_status = nullptr;
+    lv_obj_t* _label_station_nos = nullptr;
+    lv_obj_t* _arc_volume = nullptr;
+    lv_obj_t* _panel_controls = nullptr;
+    lv_obj_t* _img_prev = nullptr;
+    lv_obj_t* _img_play = nullptr;
+    lv_obj_t* _img_next = nullptr;
+    lv_obj_t* _img_signal = nullptr;
     lv_timer_t* _tmr = nullptr;
 
     int _station_count = 0;
@@ -66,8 +70,11 @@ private:
 
     void playStation(int idx);
     void stopPlayback();
-    void updateUI();
+    void updateStationUI();
+    void updatePlayPauseUI();
     void updateVolumeUI();
+    void updateStatusUI();
+    void flashControl(lv_obj_t* obj);
 
     int ringWrite(const uint8_t* data, int len);
     int ringRead(uint8_t* data, int len);

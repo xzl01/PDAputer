@@ -1,5 +1,6 @@
 #include "webradio_app.h"
 #include <ui.h>
+#include <images.h>
 #include <Arduino.h>
 #include <M5Cardputer.h>
 #include <WiFi.h>
@@ -55,7 +56,6 @@ static libhelix::MP3DecoderHelix* s_mp3 = nullptr;
 static i2s_chan_handle_t s_i2s_tx = nullptr;
 static int16_t s_volume = 16;
 static volatile bool s_first_frame = true;
-static WebRadioApp* s_instance = nullptr;
 
 static void mp3DataCb(MP3FrameInfo &info, short *pcm, size_t len, void *ref) {
     if (len == 0 || !s_i2s_tx) return;
@@ -179,7 +179,8 @@ static String parseM3U8(WiFiClient& client, const String& baseUrl) {
     String streamUrl;
     bool found = false;
 
-    while (client.available() || client.connected()) {
+    unsigned long startMs = millis();
+    while ((millis() - startMs < 5000) && (client.available() || client.connected())) {
         line = client.readStringUntil('\n');
         line.trim();
         if (line.length() == 0) continue;
@@ -272,7 +273,6 @@ void WebRadioApp::netTaskFunc(void* param) {
         HTTPClient http;
         http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
         http.setTimeout(10000);
-        http.addHeader("Icy-MetaData", "1");
 
         if (!http.begin(streamUrl)) {
             Serial.println("[WEBRADIO] HTTP begin failed");
@@ -351,11 +351,20 @@ void WebRadioApp::audioTaskFunc(void* param) {
 
 void WebRadioApp::timerCb(lv_timer_t* t) {
     WebRadioApp* self = (WebRadioApp*)lv_timer_get_user_data(t);
-    if (self) self->updateUI();
+    if (self) self->updateStatusUI();
+}
+
+void WebRadioApp::flashControl(lv_obj_t* obj) {
+    if (!obj) return;
+    lv_obj_add_state(obj, LV_STATE_FOCUS_KEY);
+    lv_timer_create([](lv_timer_t* t) {
+        lv_obj_t* o = (lv_obj_t*)lv_timer_get_user_data(t);
+        if (o) lv_obj_remove_state(o, LV_STATE_FOCUS_KEY);
+        lv_timer_delete(t);
+    }, 150, obj);
 }
 
 void WebRadioApp::onCreate() {
-    s_instance = this;
     _station_count = sizeof(STATIONS) / sizeof(STATIONS[0]);
     _ring_buf = (uint8_t*)heap_caps_malloc(RING_BUF_SIZE, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!_ring_buf) {
@@ -365,53 +374,122 @@ void WebRadioApp::onCreate() {
     _ring_tail = 0;
     _ring_count = 0;
 
+    delay(30);
+    M5.Speaker.stop();
+    M5.Speaker.end();
+
+    s_volume = _volume;
+
     _screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(_screen, lv_color_hex(0x0a2800), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(_screen, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_size(_screen, 240, 135);
+    lv_obj_remove_flag(_screen, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_bg_color(_screen, lv_color_hex(0xff191919), LV_PART_MAIN);
 
-    _panel = lv_obj_create(_screen);
-    lv_obj_set_size(_panel, 220, 100);
-    lv_obj_align(_panel, LV_ALIGN_CENTER, 0, -15);
-    lv_obj_set_style_bg_color(_panel, lv_color_hex(0x142800), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(_panel, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_border_color(_panel, lv_color_hex(0x2ef900), LV_PART_MAIN);
-    lv_obj_set_style_border_width(_panel, 2, LV_PART_MAIN);
-    lv_obj_set_style_radius(_panel, 10, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(_panel, 8, LV_PART_MAIN);
+    {
+        lv_obj_t* parent = _screen;
 
-    _title_label = lv_label_create(_panel);
-    lv_label_set_text(_title_label, "Web Radio");
-    lv_obj_set_style_text_color(_title_label, lv_color_hex(0x2ef900), LV_PART_MAIN);
-    lv_obj_set_style_text_font(_title_label, &lv_font_montserrat_16, LV_PART_MAIN);
-    lv_obj_align(_title_label, LV_ALIGN_TOP_MID, 0, 0);
+        {
+            _label_station = lv_label_create(parent);
+            lv_obj_set_pos(_label_station, 11, 5);
+            lv_obj_set_size(_label_station, 192, LV_SIZE_CONTENT);
+            lv_label_set_long_mode(_label_station, LV_LABEL_LONG_SCROLL_CIRCULAR);
+            lv_obj_set_style_text_color(_label_station, lv_color_hex(0xffffffff), LV_PART_MAIN);
+            lv_obj_set_style_text_font(_label_station, &lv_font_montserrat_14, LV_PART_MAIN);
+            lv_label_set_text(_label_station, STATIONS[0].title);
+        }
+        {
+            _label_status = lv_label_create(parent);
+            lv_obj_set_pos(_label_status, 11, 29);
+            lv_obj_set_size(_label_status, 169, LV_SIZE_CONTENT);
+            lv_label_set_long_mode(_label_status, LV_LABEL_LONG_SCROLL_CIRCULAR);
+            lv_obj_set_style_text_color(_label_status, lv_color_hex(0xffff3f3f), LV_PART_MAIN);
+            lv_obj_set_style_text_font(_label_status, &lv_font_montserrat_14, LV_PART_MAIN);
+            lv_label_set_text(_label_status, LV_SYMBOL_WIFI " Ready");
+        }
+        {
+            _label_station_nos = lv_label_create(parent);
+            lv_obj_set_pos(_label_station_nos, 82, 55);
+            lv_obj_set_size(_label_station_nos, 67, LV_SIZE_CONTENT);
+            lv_label_set_long_mode(_label_station_nos, LV_LABEL_LONG_SCROLL_CIRCULAR);
+            lv_obj_set_style_text_color(_label_station_nos, lv_color_hex(0xff13ff00), LV_PART_MAIN);
+            lv_obj_set_style_text_font(_label_station_nos, &lv_font_montserrat_14, LV_PART_MAIN);
+            lv_obj_set_style_text_align(_label_station_nos, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
+            lv_label_set_text_fmt(_label_station_nos, "%d/%d", 1, _station_count);
+        }
+        {
+            _arc_volume = lv_arc_create(parent);
+            lv_obj_set_pos(_arc_volume, 164, -7);
+            lv_obj_set_size(_arc_volume, 150, 150);
+            lv_arc_set_value(_arc_volume, _volume * 100 / 21);
+            lv_arc_set_bg_start_angle(_arc_volume, 125);
+            lv_arc_set_bg_end_angle(_arc_volume, 235);
+            lv_obj_set_style_arc_width(_arc_volume, 3, LV_PART_MAIN);
+            lv_obj_set_style_arc_color(_arc_volume, lv_color_hex(0xff000000), LV_PART_MAIN);
+            lv_obj_set_style_arc_width(_arc_volume, 3, LV_PART_INDICATOR);
+            lv_obj_set_style_arc_color(_arc_volume, lv_color_hex(0xffcfcd31), LV_PART_INDICATOR);
+            lv_obj_set_style_bg_opa(_arc_volume, 0, LV_PART_KNOB);
+        }
+        {
+            _img_signal = lv_image_create(parent);
+            lv_obj_set_pos(_img_signal, 195, 40);
+            lv_obj_set_size(_img_signal, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+            lv_image_set_src(_img_signal, &img_wifi_04);
+            lv_image_set_scale(_img_signal, 180);
+            lv_obj_set_style_image_recolor(_img_signal, lv_color_hex(0xff5197f9), LV_PART_MAIN);
+            lv_obj_set_style_image_recolor_opa(_img_signal, 200, LV_PART_MAIN);
+        }
+        {
+            _panel_controls = lv_obj_create(parent);
+            lv_obj_set_pos(_panel_controls, 5, 86);
+            lv_obj_set_size(_panel_controls, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+            lv_obj_remove_flag(_panel_controls, LV_OBJ_FLAG_SCROLLABLE);
+            lv_obj_set_style_radius(_panel_controls, 256, LV_PART_MAIN);
+            lv_obj_set_style_border_width(_panel_controls, 2, LV_PART_MAIN);
+            lv_obj_set_style_border_color(_panel_controls, lv_color_hex(0xff3f4147), LV_PART_MAIN);
+            lv_obj_set_style_bg_opa(_panel_controls, 0, LV_PART_MAIN);
+            lv_obj_set_style_layout(_panel_controls, LV_LAYOUT_FLEX, LV_PART_MAIN);
+            lv_obj_set_style_flex_flow(_panel_controls, LV_FLEX_FLOW_ROW, LV_PART_MAIN);
+            lv_obj_set_style_flex_main_place(_panel_controls, LV_FLEX_ALIGN_CENTER, LV_PART_MAIN);
+            lv_obj_set_style_flex_cross_place(_panel_controls, LV_FLEX_ALIGN_CENTER, LV_PART_MAIN);
+            lv_obj_set_style_flex_track_place(_panel_controls, LV_FLEX_ALIGN_CENTER, LV_PART_MAIN);
+            lv_obj_set_style_pad_all(_panel_controls, 5, LV_PART_MAIN);
+            lv_obj_set_style_pad_column(_panel_controls, 5, LV_PART_MAIN);
 
-    _station_label = lv_label_create(_panel);
-    lv_label_set_text(_station_label, STATIONS[0].title);
-    lv_obj_set_style_text_color(_station_label, lv_color_hex(0xffffff), LV_PART_MAIN);
-    lv_obj_set_style_text_font(_station_label, &lv_font_montserrat_14, LV_PART_MAIN);
-    lv_obj_align(_station_label, LV_ALIGN_CENTER, 0, 5);
+            {
+                lv_obj_t* panel_parent = _panel_controls;
 
-    _status_label = lv_label_create(_panel);
-    lv_label_set_text(_status_label, LV_SYMBOL_WIFI " Ready");
-    lv_obj_set_style_text_color(_status_label, lv_color_hex(0xaaaaaa), LV_PART_MAIN);
-    lv_obj_set_style_text_font(_status_label, &lv_font_montserrat_12, LV_PART_MAIN);
-    lv_obj_align(_status_label, LV_ALIGN_BOTTOM_MID, 0, 0);
+                {
+                    _img_prev = lv_image_create(panel_parent);
+                    lv_obj_set_size(_img_prev, 30, 30);
+                    lv_image_set_src(_img_prev, &img_music_previous);
+                    lv_obj_set_style_image_recolor(_img_prev, lv_color_hex(0xff13ff00), LV_PART_MAIN | LV_STATE_FOCUS_KEY);
+                    lv_obj_set_style_image_recolor_opa(_img_prev, 255, LV_PART_MAIN | LV_STATE_FOCUS_KEY);
+                }
+                {
+                    _img_play = lv_image_create(panel_parent);
+                    lv_obj_set_size(_img_play, 30, 30);
+                    lv_image_set_src(_img_play, &img_music_play);
+                    lv_obj_set_style_image_recolor(_img_play, lv_color_hex(0xffff5b00), LV_PART_MAIN | LV_STATE_CHECKED);
+                    lv_obj_set_style_image_recolor_opa(_img_play, 255, LV_PART_MAIN | LV_STATE_CHECKED);
+                    lv_obj_set_style_image_recolor(_img_play, lv_color_hex(0xff13ff00), LV_PART_MAIN | LV_STATE_FOCUS_KEY);
+                    lv_obj_set_style_image_recolor_opa(_img_play, 255, LV_PART_MAIN | LV_STATE_FOCUS_KEY);
+                }
+                {
+                    _img_next = lv_image_create(panel_parent);
+                    lv_obj_set_size(_img_next, 30, 30);
+                    lv_image_set_src(_img_next, &img_music_next);
+                    lv_obj_set_style_image_recolor(_img_next, lv_color_hex(0xff13ff00), LV_PART_MAIN | LV_STATE_FOCUS_KEY);
+                    lv_obj_set_style_image_recolor_opa(_img_next, 255, LV_PART_MAIN | LV_STATE_FOCUS_KEY);
+                }
+            }
+        }
+    }
 
-    _volume_label = lv_label_create(_screen);
-    lv_label_set_text_fmt(_volume_label, "Vol: %d/%d", _volume, 21);
-    lv_obj_set_style_text_color(_volume_label, lv_color_hex(0x2ef900), LV_PART_MAIN);
-    lv_obj_set_style_text_font(_volume_label, &lv_font_montserrat_12, LV_PART_MAIN);
-    lv_obj_align(_volume_label, LV_ALIGN_BOTTOM_MID, 0, -10);
-
-    lv_obj_t* hint = lv_label_create(_screen);
-    lv_label_set_text(hint, "< > Switch  OK Play/Stop  Vol+/-");
-    lv_obj_set_style_text_color(hint, lv_color_hex(0x666666), LV_PART_MAIN);
-    lv_obj_set_style_text_font(hint, &lv_font_montserrat_10, LV_PART_MAIN);
-    lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -28);
+    updateStationUI();
+    updatePlayPauseUI();
+    updateVolumeUI();
 
     _tmr = lv_timer_create(timerCb, 200, this);
-
-    M5.Speaker.end();
 
     loadScreen(SCREEN_ID_MAIN);
     lv_scr_load(_screen);
@@ -439,7 +517,6 @@ void WebRadioApp::onDestroy() {
     }
 
     M5.Speaker.begin();
-    s_instance = nullptr;
 }
 
 void WebRadioApp::playStation(int idx) {
@@ -510,82 +587,106 @@ void WebRadioApp::stopPlayback() {
     _ring_count = 0;
 }
 
-void WebRadioApp::updateUI() {
-    if (!_station_label) return;
+void WebRadioApp::updateStationUI() {
+    if (!_label_station) return;
+    lv_label_set_text(_label_station, STATIONS[_selected].title);
+    if (_label_station_nos) {
+        lv_label_set_text_fmt(_label_station_nos, "%d/%d", _selected + 1, _station_count);
+    }
+}
 
-    lv_label_set_text(_station_label, STATIONS[_selected].title);
-
-    if (_stream_error) {
-        lv_label_set_text(_status_label, LV_SYMBOL_WARNING " Error");
-        lv_obj_set_style_text_color(_status_label, lv_color_hex(0xff4444), LV_PART_MAIN);
-    } else if (_connecting) {
-        lv_label_set_text(_status_label, LV_SYMBOL_WIFI " Connecting...");
-        lv_obj_set_style_text_color(_status_label, lv_color_hex(0xffff00), LV_PART_MAIN);
-    } else if (_playing) {
-        lv_label_set_text(_status_label, LV_SYMBOL_PLAY " Playing");
-        lv_obj_set_style_text_color(_status_label, lv_color_hex(0x2ef900), LV_PART_MAIN);
+void WebRadioApp::updatePlayPauseUI() {
+    if (!_img_play) return;
+    if (_playing) {
+        lv_obj_add_state(_img_play, LV_STATE_CHECKED);
     } else {
-        lv_label_set_text(_status_label, LV_SYMBOL_STOP " Stopped");
-        lv_obj_set_style_text_color(_status_label, lv_color_hex(0xaaaaaa), LV_PART_MAIN);
+        lv_obj_remove_state(_img_play, LV_STATE_CHECKED);
     }
 }
 
 void WebRadioApp::updateVolumeUI() {
-    if (_volume_label) {
-        lv_label_set_text_fmt(_volume_label, "Vol: %d/%d", _volume, 21);
+    if (!_arc_volume) return;
+    lv_arc_set_value(_arc_volume, _volume * 100 / 21);
+}
+
+void WebRadioApp::updateStatusUI() {
+    if (!_label_status) return;
+
+    if (_stream_error) {
+        lv_label_set_text(_label_status, LV_SYMBOL_WARNING " Error");
+        lv_obj_set_style_text_color(_label_status, lv_color_hex(0xffff3f3f), LV_PART_MAIN);
+    } else if (_connecting) {
+        lv_label_set_text(_label_status, LV_SYMBOL_WIFI " Connecting...");
+        lv_obj_set_style_text_color(_label_status, lv_color_hex(0xffcfcd31), LV_PART_MAIN);
+    } else if (_playing) {
+        lv_label_set_text(_label_status, LV_SYMBOL_PLAY " Playing");
+        lv_obj_set_style_text_color(_label_status, lv_color_hex(0xff13ff00), LV_PART_MAIN);
+    } else {
+        lv_label_set_text(_label_status, LV_SYMBOL_STOP " Stopped");
+        lv_obj_set_style_text_color(_label_status, lv_color_hex(0xff5197f9), LV_PART_MAIN);
     }
 }
 
 void WebRadioApp::onKeyPressed(char key) {
+    if (key == '`') {
+        if (atoi(ConfigManager::getVolume()) > 0) M5.Speaker.tone(3000, 20);
+        if (_back_app) _manager.switchApp(_back_app);
+        return;
+    }
+
     switch (key) {
-        case 'd': {
-            _selected = (_selected + 1) % _station_count;
-            if (_playing || _connecting) {
-                playStation(_selected);
+        case '.':
+            if (_station_count > 0) {
+                flashControl(_img_next);
+                _selected = (_selected + 1) % _station_count;
+                updateStationUI();
+                if (_playing || _connecting) {
+                    playStation(_selected);
+                }
+                updatePlayPauseUI();
             }
-            updateUI();
-            M5.Speaker.tone(4000, 20);
             break;
-        }
-        case 'a': {
-            _selected = (_selected - 1 + _station_count) % _station_count;
-            if (_playing || _connecting) {
-                playStation(_selected);
+
+        case ';':
+            if (_station_count > 0) {
+                flashControl(_img_prev);
+                _selected = (_selected - 1 + _station_count) % _station_count;
+                updateStationUI();
+                if (_playing || _connecting) {
+                    playStation(_selected);
+                }
+                updatePlayPauseUI();
             }
-            updateUI();
-            M5.Speaker.tone(4000, 20);
             break;
-        }
-        case '\n': {
+
+        case 'p': case 'P':
+            flashControl(_img_play);
             if (_playing || _connecting) {
                 stopPlayback();
             } else {
                 if (WiFi.status() == WL_CONNECTED) {
                     playStation(_selected);
                 } else {
-                    lv_label_set_text(_status_label, LV_SYMBOL_WARNING " No WiFi");
-                    lv_obj_set_style_text_color(_status_label, lv_color_hex(0xff4444), LV_PART_MAIN);
+                    lv_label_set_text(_label_status, LV_SYMBOL_WARNING " No WiFi");
+                    lv_obj_set_style_text_color(_label_status, lv_color_hex(0xffff3f3f), LV_PART_MAIN);
                 }
             }
-            updateUI();
+            updatePlayPauseUI();
+            updateStatusUI();
             break;
-        }
-        case 'w': {
-            _volume = (_volume + 2 > 21) ? 21 : _volume + 2;
+
+        case '=': case '+':
+            _volume += 2;
+            if (_volume > 21) _volume = 21;
             s_volume = _volume;
             updateVolumeUI();
             break;
-        }
-        case 's': {
-            _volume = (_volume - 2 < 0) ? 0 : _volume - 2;
+
+        case '-': case '_':
+            _volume -= 2;
+            if (_volume < 0) _volume = 0;
             s_volume = _volume;
             updateVolumeUI();
             break;
-        }
-        case '`': {
-            stopPlayback();
-            _manager.switchTo(_back_app);
-            break;
-        }
     }
 }
