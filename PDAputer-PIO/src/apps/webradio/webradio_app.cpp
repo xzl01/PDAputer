@@ -8,6 +8,7 @@
 #include <HTTPClient.h>
 #include <MP3DecoderHelix.h>
 #include <config_manager.h>
+#include <keyboard_manager.h>
 #if __has_include(<driver/i2s_std.h>)
 #include <driver/i2s_std.h>
 #else
@@ -495,7 +496,6 @@ void WebRadioApp::onCreate() {
 
     _tmr = lv_timer_create(timerCb, 200, this);
 
-    loadScreen(SCREEN_ID_MAIN);
     lv_scr_load(_screen);
 }
 
@@ -593,11 +593,16 @@ void WebRadioApp::stopPlayback() {
 }
 
 void WebRadioApp::goBack() {
+    Serial.printf("[WEBRADIO] goBack playing=%d connecting=%d net=%p audio=%p back=%p\n",
+                  _playing, _connecting, _net_task, _audio_task, _back_app);
     if (_playing || _connecting || _net_task || _audio_task) {
         stopPlayback();
     }
     if (_back_app) {
         _manager.switchApp(_back_app);
+        Serial.println("[WEBRADIO] switchApp(back_app) requested");
+    } else {
+        Serial.println("[WEBRADIO] goBack ignored, _back_app is null");
     }
 }
 
@@ -642,7 +647,9 @@ void WebRadioApp::updateStatusUI() {
 }
 
 void WebRadioApp::onKeyPressed(char key) {
-    if (key == '`' || key == 0x1B) {
+    Serial.printf("[WEBRADIO] key '%c' (0x%02X) playing=%d connecting=%d\n",
+                  (key >= 32 && key < 127) ? key : '.', (uint8_t)key, _playing, _connecting);
+    if (key == '`' || key == 0x1B || key == KEY_CODE_ENTER) {
         if (atoi(ConfigManager::getVolume()) > 0) M5.Speaker.tone(3000, 20);
         goBack();
         return;
