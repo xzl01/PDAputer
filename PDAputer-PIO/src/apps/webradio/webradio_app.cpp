@@ -370,6 +370,10 @@ void WebRadioApp::onCreate() {
     if (!_ring_buf) {
         _ring_buf = (uint8_t*)malloc(RING_BUF_SIZE);
     }
+    if (!_ring_buf) {
+        Serial.println("[WEBRADIO] Failed to allocate ring buffer!");
+        return;
+    }
     _ring_head = 0;
     _ring_tail = 0;
     _ring_count = 0;

@@ -1,9 +1,6 @@
 #include "app_manager.h"
 
-SemaphoreHandle_t AppManager::lvglMutex = nullptr;
-
 void AppManager::init() {
-    lvglMutex = xSemaphoreCreateMutex();
 }
 
 void AppManager::update() {

@@ -179,7 +179,7 @@ void MusicApp::audioTaskFunc(void* param) {
             if (rd > 0) {
                 self->_data_remaining -= rd;
                 if (!self->_wav_16bit) {
-                    int16_t tmp[512];
+                    int16_t tmp[1024];
                     for (size_t i = 0; i < rd; i++) {
                         tmp[i] = ((int16_t)buf[i] - 128) * s_volume * 256 / 21;
                     }
@@ -342,10 +342,6 @@ void MusicApp::scanTracks() {
         if (len > 4) {
             const char* ext = name + len - 4;
             valid = (strcasecmp(ext, ".wav") == 0 || strcasecmp(ext, ".mp3") == 0);
-        }
-        if (!valid && len > 5) {
-            const char* ext = name + len - 5;
-            valid = (strcasecmp(ext, ".flac") == 0);
         }
 
         if (valid) {
@@ -588,8 +584,11 @@ void MusicApp::onDestroy() {
     _playing = false;
 
     _audio_task_run = false;
-    vTaskDelay(pdMS_TO_TICKS(50));
-    _audio_task = nullptr;
+    vTaskDelay(pdMS_TO_TICKS(100));
+    if (_audio_task) {
+        vTaskDelete(_audio_task);
+        _audio_task = nullptr;
+    }
 
     teardownI2S();
     M5.Speaker.begin();

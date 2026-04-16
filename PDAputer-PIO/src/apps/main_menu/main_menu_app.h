@@ -39,7 +39,7 @@ private:
     AppBase* _app_targets[APP_COUNT] = {};
 
     lv_obj_t* _icons[APP_COUNT];
-    int _selected_index = 2;
+    int _selected_index = 0;
 
     // Scroll animation
     Animate _scroll_anim;
