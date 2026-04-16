@@ -233,6 +233,11 @@ void SettingsApp::wifiClose() {
     _wifi_status = nullptr;
     _wifi_list = nullptr;
     _wifi_pwd_label = nullptr;
+
+    const char* ssid = ConfigManager::getWifiSSID();
+    if (ssid[0] && WiFi.status() != WL_CONNECTED) {
+        WiFi.begin(ssid, ConfigManager::getWifiPassword());
+    }
 }
 
 void SettingsApp::onCreate() {
@@ -275,6 +280,7 @@ void SettingsApp::onCreate() {
 
 void SettingsApp::onUpdate() {
     if (_wifi_state == 10) {
+        WiFi.disconnect(true);
         WiFi.mode(WIFI_STA);
         _wifi_scan_start = millis();
         _wifi_state = 11;
@@ -578,23 +584,38 @@ void SettingsApp::onKeyPressed(char key) {
             return;
         }
 
-        if (_wifi_state == 2 && _ap_count > 0) {
-            if (key == ';' && _ap_sel > 0) {
-                _ap_sel--;
-                playTone(TONE_NAV);
-                updateWifiSelectionStyles();
-            } else if (key == '.' && _ap_sel < _ap_count - 1) {
-                _ap_sel++;
-                playTone(TONE_NAV);
-                updateWifiSelectionStyles();
-            } else if (key == '\n') {
+        if (_wifi_state == 5) {
+            if (key == '\n') {
                 playTone(TONE_OK);
-                if (_aps[_ap_sel].enc == 0) {
-                    _pwd_len = 0;
-                    _pwd[0] = '\0';
-                    wifiConnect();
-                } else {
-                    wifiEnterPassword();
+                wifiEnterScan();
+            }
+            return;
+        }
+
+        if (_wifi_state == 2) {
+            if (_ap_count == 0) {
+                if (key == '\n') {
+                    playTone(TONE_OK);
+                    wifiEnterScan();
+                }
+            } else {
+                if (key == ';' && _ap_sel > 0) {
+                    _ap_sel--;
+                    playTone(TONE_NAV);
+                    updateWifiSelectionStyles();
+                } else if (key == '.' && _ap_sel < _ap_count - 1) {
+                    _ap_sel++;
+                    playTone(TONE_NAV);
+                    updateWifiSelectionStyles();
+                } else if (key == '\n') {
+                    playTone(TONE_OK);
+                    if (_aps[_ap_sel].enc == 0) {
+                        _pwd_len = 0;
+                        _pwd[0] = '\0';
+                        wifiConnect();
+                    } else {
+                        wifiEnterPassword();
+                    }
                 }
             }
             return;
