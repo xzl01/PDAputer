@@ -7,6 +7,9 @@
 #include <config_manager.h>
 #include <SD.h>
 #include <MP3DecoderHelix.h>
+#define DR_FLAC_IMPLEMENTATION
+#define DR_FLAC_NO_STDIO
+#include <dr_flac.h>
 #if __has_include(<driver/i2s_std.h>)
 #include <driver/i2s_std.h>
 #else
@@ -195,6 +198,28 @@ void MusicApp::audioTaskFunc(void* param) {
                     i2s_channel_write(self->_i2s_tx, buf, rd, &written, pdMS_TO_TICKS(100));
                 }
             }
+        } else if (self->_track_type == TRACK_FLAC) {
+            if (!self->_dr_flac) {
+                self->_data_remaining = 0;
+            } else {
+                int16_t pcm[1152];
+                drflac* flac = (drflac*)self->_dr_flac;
+                drflac_uint64 framesRead = drflac_read_pcm_frames_s16(flac, 576, pcm);
+                if (framesRead > 0) {
+                    size_t sampleCount = (size_t)(framesRead * flac->channels);
+                    for (size_t i = 0; i < sampleCount; i++) {
+                        pcm[i] = (int32_t)pcm[i] * s_volume / 21;
+                    }
+                    size_t written;
+                    i2s_channel_write(self->_i2s_tx, pcm, sampleCount * sizeof(int16_t), &written, pdMS_TO_TICKS(100));
+
+                    self->_flac_current_frame += framesRead;
+                    int32_t bytesDecoded = (int32_t)(framesRead * flac->channels * sizeof(int16_t));
+                    self->_data_remaining -= bytesDecoded;
+                } else {
+                    self->_data_remaining = 0;
+                }
+            }
         }
 
         // Track finished
@@ -343,6 +368,10 @@ void MusicApp::scanTracks() {
             const char* ext = name + len - 4;
             valid = (strcasecmp(ext, ".wav") == 0 || strcasecmp(ext, ".mp3") == 0);
         }
+        if (!valid && len > 5) {
+            const char* ext = name + len - 5;
+            valid = (strcasecmp(ext, ".flac") == 0);
+        }
 
         if (valid) {
             strncpy(_track_names[_track_count], name, 63);
@@ -366,6 +395,8 @@ bool MusicApp::openTrack(int track_idx) {
     size_t len = strlen(name);
     if (len > 4 && strcasecmp(name + len - 4, ".mp3") == 0)
         return openMp3(track_idx);
+    if (len > 5 && strcasecmp(name + len - 5, ".flac") == 0)
+        return openFlac(track_idx);
     return openWav(track_idx);
 }
 
@@ -447,6 +478,63 @@ bool MusicApp::openMp3(int track_idx) {
     return true;
 }
 
+static size_t flacReadCb(void* pUserData, void* pBufferOut, size_t bytesToRead) {
+    File* f = (File*)pUserData;
+    return f->read((uint8_t*)pBufferOut, bytesToRead);
+}
+
+static drflac_bool32 flacSeekCb(void* pUserData, int offset, drflac_origin origin) {
+    File* f = (File*)pUserData;
+    SeekMode mode = SeekSet;
+    if (origin == drflac_origin_current) mode = SeekCur;
+    else if (origin == drflac_origin_end) mode = SeekEnd;
+    return f->seek(offset, mode) ? DRFLAC_TRUE : DRFLAC_FALSE;
+}
+
+bool MusicApp::openFlac(int track_idx) {
+    stopPlayback();
+    if (track_idx < 0 || track_idx >= _track_count) return false;
+
+    char path[128];
+    snprintf(path, sizeof(path), "%s/%s", MUSIC_PATH, _track_names[track_idx]);
+    _file = SD.open(path);
+    if (!_file) return false;
+
+    _artist[0] = '\0';
+    _album[0] = '\0';
+
+    if (_dr_flac) {
+        drflac_close((drflac*)_dr_flac);
+        _dr_flac = nullptr;
+    }
+
+    drflac* flac = drflac_open(flacReadCb, flacSeekCb, (void*)&_file, nullptr);
+    if (!flac) {
+        Serial.println("[MUSIC] FLAC open failed");
+        _file.close();
+        return false;
+    }
+
+    _dr_flac = (void*)flac;
+    _flac_total_frames = flac->totalPCMFrameCount;
+    _flac_current_frame = 0;
+    _data_total = (int32_t)(_flac_total_frames * flac->channels * sizeof(int16_t));
+    _data_remaining = _data_total;
+
+    setupI2S(flac->sampleRate, flac->channels >= 2);
+    s_i2s_tx = _i2s_tx;
+
+    _active = true;
+    _track_type = TRACK_FLAC;
+    _play_start_ms = millis();
+    _pause_elapsed_ms = 0;
+
+    Serial.printf("[MUSIC] FLAC: %dHz %dch %llu frames\n",
+                  flac->sampleRate, flac->channels, (unsigned long long)_flac_total_frames);
+    Serial.printf("[MUSIC] Playing: %s\n", _track_names[track_idx]);
+    return true;
+}
+
 void MusicApp::stopPlayback() {
     _active = false;
     _playing = false;
@@ -461,6 +549,10 @@ void MusicApp::stopPlayback() {
     vTaskDelay(pdMS_TO_TICKS(50));
 
     if (_track_type == TRACK_MP3 && s_mp3) s_mp3->end();
+    if (_track_type == TRACK_FLAC && _dr_flac) {
+        drflac_close((drflac*)_dr_flac);
+        _dr_flac = nullptr;
+    }
     _track_type = TRACK_NONE;
     if (_file) _file.close();
     _pause_elapsed_ms = 0;
@@ -491,6 +583,22 @@ void MusicApp::seekRelative(int seconds) {
         byte_offset = seconds * (int32_t)bps;
     } else if (_track_type == TRACK_MP3) {
         byte_offset = seconds * 40000;
+    } else if (_track_type == TRACK_FLAC && _dr_flac) {
+        drflac* flac = (drflac*)_dr_flac;
+        int64_t targetFrame = (int64_t)_flac_current_frame + (int64_t)seconds * flac->sampleRate;
+        if (targetFrame < 0) targetFrame = 0;
+        if (targetFrame > (int64_t)_flac_total_frames) targetFrame = (int64_t)_flac_total_frames;
+        drflac_seek_to_pcm_frame(flac, (drflac_uint64)targetFrame);
+        _flac_current_frame = (uint64_t)targetFrame;
+        _data_remaining = (int32_t)((_flac_total_frames - _flac_current_frame) * flac->channels * sizeof(int16_t));
+        _pause_elapsed_ms = (uint32_t)(_flac_current_frame * 1000 / flac->sampleRate);
+        _play_start_ms = millis();
+        if (was_playing && _i2s_tx && !_i2s_running) {
+            i2s_channel_enable(_i2s_tx);
+            _i2s_running = true;
+        }
+        _playing = was_playing;
+        return;
     }
 
     int32_t new_consumed = consumed + byte_offset;

@@ -65,23 +65,25 @@ private:
     void teardownI2S();
 
     // Playback
-    enum TrackType { TRACK_NONE, TRACK_WAV, TRACK_MP3 };
+    enum TrackType { TRACK_NONE, TRACK_WAV, TRACK_MP3, TRACK_FLAC };
     TrackType _track_type = TRACK_NONE;
     File _file;
     volatile bool _active = false;
     int32_t _data_remaining = 0;
     int32_t _data_total = 0;
     uint32_t _play_start_ms = 0;
-    uint32_t _pause_elapsed_ms = 0; // accumulated elapsed before pause
+    uint32_t _pause_elapsed_ms = 0;
 
-    // ID3v2 metadata
     char _artist[64];
     char _album[64];
 
-    // WAV format info
     bool _wav_16bit = false;
     bool _wav_stereo = false;
     uint32_t _wav_sample_rate = 44100;
+
+    void* _dr_flac = nullptr;
+    uint64_t _flac_total_frames = 0;
+    uint64_t _flac_current_frame = 0;
 
     // Audio decode task
     TaskHandle_t _audio_task = nullptr;
@@ -91,6 +93,7 @@ private:
     bool openTrack(int track_idx);
     bool openWav(int track_idx);
     bool openMp3(int track_idx);
+    bool openFlac(int track_idx);
     void stopPlayback();
     void seekRelative(int seconds);
     void extractID3Meta(int track_idx);
