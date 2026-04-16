@@ -259,16 +259,18 @@ void TerminalApp::renderSpanLine(int row, int history_index) {
     lv_obj_t* sg = _spangroups[row];
     if (!sg) return;
 
-    lv_spangroup_del_span(sg, lv_spangroup_get_child(sg, 0));
-    while (lv_spangroup_get_child(sg, 0)) {
-        lv_spangroup_del_span(sg, lv_spangroup_get_child(sg, 0));
+    while (lv_spangroup_get_span_count(sg) > 0) {
+        lv_span_t* span = lv_spangroup_get_child(sg, 0);
+        if (!span) break;
+        lv_spangroup_delete_span(sg, span);
     }
 
     if (history_index < 0 || history_index >= _history_count) {
-        lv_span_t* span = lv_spangroup_new_span(sg);
+        lv_span_t* span = lv_spangroup_add_span(sg);
         if (span) {
             lv_span_set_text(span, "");
         }
+        lv_spangroup_refresh(sg);
         return;
     }
 
@@ -280,23 +282,21 @@ void TerminalApp::renderSpanLine(int row, int history_index) {
     while (text_len < TERM_COLS && text[text_len]) text_len++;
 
     if (text_len == 0) {
-        lv_span_t* span = lv_spangroup_new_span(sg);
+        lv_span_t* span = lv_spangroup_add_span(sg);
         if (span) {
             lv_span_set_text(span, " ");
-            lv_style_set_text_color(&span->style, rgb565_to_lv_color(0xFFFF));
-            lv_style_set_bg_color(&span->style, rgb565_to_lv_color(0x0000));
-            lv_style_set_bg_opa(&span->style, LV_OPA_COVER);
+            lv_style_t* style = lv_span_get_style(span);
+            lv_style_set_text_color(style, rgb565_to_lv_color(0xFFFF));
         }
+        lv_spangroup_refresh(sg);
         return;
     }
 
     int col = 0;
     while (col < text_len) {
         uint16_t cur_fg = fg_arr[col];
-        uint16_t cur_bg = bg_arr[col];
-
         int run_start = col;
-        while (col < text_len && fg_arr[col] == cur_fg && bg_arr[col] == cur_bg) {
+        while (col < text_len && fg_arr[col] == cur_fg && bg_arr[col] == bg_arr[run_start]) {
             col++;
         }
         int run_len = col - run_start;
@@ -306,14 +306,15 @@ void TerminalApp::renderSpanLine(int row, int history_index) {
         memcpy(buf, text + run_start, run_len);
         buf[run_len] = '\0';
 
-        lv_span_t* span = lv_spangroup_new_span(sg);
+        lv_span_t* span = lv_spangroup_add_span(sg);
         if (span) {
             lv_span_set_text(span, buf);
-            lv_style_set_text_color(&span->style, rgb565_to_lv_color(cur_fg));
-            lv_style_set_bg_color(&span->style, rgb565_to_lv_color(cur_bg));
-            lv_style_set_bg_opa(&span->style, LV_OPA_COVER);
+            lv_style_t* style = lv_span_get_style(span);
+            lv_style_set_text_color(style, rgb565_to_lv_color(cur_fg));
         }
     }
+
+    lv_spangroup_refresh(sg);
 }
 
 void TerminalApp::renderTerminal() {
@@ -332,12 +333,14 @@ void TerminalApp::renderTerminal() {
         if (idx < _history_count) {
             renderSpanLine(row, idx);
         } else {
-            lv_spangroup_del_span(_spangroups[row], lv_spangroup_get_child(_spangroups[row], 0));
-            while (lv_spangroup_get_child(_spangroups[row], 0)) {
-                lv_spangroup_del_span(_spangroups[row], lv_spangroup_get_child(_spangroups[row], 0));
+            while (lv_spangroup_get_span_count(_spangroups[row]) > 0) {
+                lv_span_t* span = lv_spangroup_get_child(_spangroups[row], 0);
+                if (!span) break;
+                lv_spangroup_delete_span(_spangroups[row], span);
             }
-            lv_span_t* span = lv_spangroup_new_span(_spangroups[row]);
+            lv_span_t* span = lv_spangroup_add_span(_spangroups[row]);
             if (span) lv_span_set_text(span, "");
+            lv_spangroup_refresh(_spangroups[row]);
         }
     }
 }
@@ -445,8 +448,9 @@ void TerminalApp::onCreate() {
         lv_obj_set_style_pad_row(_spangroups[i], 0, 0);
         lv_obj_set_style_pad_column(_spangroups[i], 0, 0);
 
-        lv_span_t* placeholder = lv_spangroup_new_span(_spangroups[i]);
+        lv_span_t* placeholder = lv_spangroup_add_span(_spangroups[i]);
         if (placeholder) lv_span_set_text(placeholder, "");
+        lv_spangroup_refresh(_spangroups[i]);
     }
 
     _input_container = lv_obj_create(_screen);

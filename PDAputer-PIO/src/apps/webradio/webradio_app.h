@@ -70,6 +70,7 @@ private:
 
     void playStation(int idx);
     void stopPlayback();
+    void goBack();
     void updateStationUI();
     void updatePlayPauseUI();
     void updateVolumeUI();

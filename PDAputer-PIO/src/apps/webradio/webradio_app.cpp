@@ -547,7 +547,8 @@ void WebRadioApp::playStation(int idx) {
         s_mp3 = nullptr;
     }
     s_mp3 = new libhelix::MP3DecoderHelix();
-    s_mp3->begin(mp3DataCb, nullptr);
+    s_mp3->setDataCallback(mp3DataCb);
+    s_mp3->begin();
 
     _net_task_run = true;
     xTaskCreatePinnedToCore(netTaskFunc, "webradio_net", 8192, this, 4, &_net_task, 0);
@@ -591,6 +592,15 @@ void WebRadioApp::stopPlayback() {
     _ring_count = 0;
 }
 
+void WebRadioApp::goBack() {
+    if (_playing || _connecting || _net_task || _audio_task) {
+        stopPlayback();
+    }
+    if (_back_app) {
+        _manager.switchApp(_back_app);
+    }
+}
+
 void WebRadioApp::updateStationUI() {
     if (!_label_station) return;
     lv_label_set_text(_label_station, STATIONS[_selected].title);
@@ -632,9 +642,9 @@ void WebRadioApp::updateStatusUI() {
 }
 
 void WebRadioApp::onKeyPressed(char key) {
-    if (key == '`') {
+    if (key == '`' || key == 0x1B) {
         if (atoi(ConfigManager::getVolume()) > 0) M5.Speaker.tone(3000, 20);
-        if (_back_app) _manager.switchApp(_back_app);
+        goBack();
         return;
     }
 
