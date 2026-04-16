@@ -48,9 +48,8 @@ void SettingsApp::wifiEnterScan() {
     _pwd_len = 0;
     _pwd[0] = '\0';
 
-    // Use objects.settings as parent (the actual Settings screen), not lv_scr_act()
-    lv_obj_t* parent = objects.settings ? objects.settings : lv_scr_act();
-    Serial.printf("[WIFI] EnterScan parent=%p settings=%p scr=%p\n", parent, objects.settings, lv_scr_act());
+    lv_obj_t* parent = lv_layer_top();
+    Serial.printf("[WIFI] EnterScan parent=%p layer_top=%p\n", parent, lv_layer_top());
 
     _wifi_screen = lv_obj_create(parent);
     lv_obj_set_size(_wifi_screen, 240, 135);
@@ -277,12 +276,21 @@ void SettingsApp::onCreate() {
 void SettingsApp::onUpdate() {
     if (_wifi_state == 10) {
         WiFi.mode(WIFI_STA);
+        _wifi_scan_start = millis();
         _wifi_state = 11;
     } else if (_wifi_state == 11) {
-        WiFi.scanNetworks(true);
-        _wifi_state = 1;
+        if (millis() - _wifi_scan_start >= 200) {
+            WiFi.scanNetworks(true);
+            _wifi_scan_start = millis();
+            _wifi_state = 1;
+        }
     } else if (_wifi_state == 1) {
         wifiPollScan();
+        if (millis() - _wifi_scan_start > 15000) {
+            WiFi.scanDelete();
+            _ap_count = 0;
+            wifiBuildList();
+        }
     } else if (_wifi_state == 4) {
         wl_status_t st = WiFi.status();
         if (st == WL_CONNECTED) {

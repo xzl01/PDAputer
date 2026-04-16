@@ -45,6 +45,7 @@ private:
     lv_obj_t* _wifi_list = nullptr;
     lv_obj_t* _wifi_pwd_label = nullptr;
     unsigned long _wifi_connect_start = 0;
+    unsigned long _wifi_scan_start = 0;
 
     void wifiEnterScan();
     void wifiPollScan();
