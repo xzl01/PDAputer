@@ -68,7 +68,7 @@ void MainMenuApp::onCreate() {
     // Map LVGL objects to icon array (matches APP_DEFS order)
     _icons[0] = objects.main_image_app_notes;
     _icons[1] = objects.main_image_app_music;
-    _icons[2] = objects.main_image_app_webradio;
+    _icons[2] = objects.main_image_app_terminal;
     _icons[3] = objects.main_image_app_fmradio;
     _icons[4] = objects.main_image_app_ai;
     _icons[5] = objects.main_image_app_games;

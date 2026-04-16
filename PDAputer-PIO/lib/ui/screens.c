@@ -260,6 +260,17 @@ void create_screen_main() {
             lv_obj_set_style_opa(obj, 100, LV_PART_MAIN | LV_STATE_DEFAULT);
         }
         {
+            // main image app terminal
+            lv_obj_t *obj = lv_image_create(parent_obj);
+            objects.main_image_app_terminal = obj;
+            lv_obj_set_pos(obj, 149, 68);
+            lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+            lv_image_set_src(obj, &img_icon_terminal);
+            lv_image_set_scale(obj, 200);
+            lv_obj_add_state(obj, LV_STATE_CHECKED);
+            lv_obj_set_style_opa(obj, 100, LV_PART_MAIN | LV_STATE_DEFAULT);
+        }
+        {
             // main image app music
             lv_obj_t *obj = lv_image_create(parent_obj);
             objects.main_image_app_music = obj;
@@ -412,6 +423,7 @@ void delete_screen_main() {
     objects.main_label_menu_selected = 0;
     objects.main_image_app_fmradio = 0;
     objects.main_image_app_webradio = 0;
+    objects.main_image_app_terminal = 0;
     objects.main_image_app_music = 0;
     objects.main_image_app_ai = 0;
     objects.main_image_app_setting = 0;

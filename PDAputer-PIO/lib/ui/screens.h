@@ -49,6 +49,7 @@ typedef struct _objects_t {
     lv_obj_t *main_label_menu_selected;
     lv_obj_t *main_image_app_fmradio;
     lv_obj_t *main_image_app_webradio;
+    lv_obj_t *main_image_app_terminal;
     lv_obj_t *main_image_app_music;
     lv_obj_t *main_image_app_ai;
     lv_obj_t *main_image_app_setting;

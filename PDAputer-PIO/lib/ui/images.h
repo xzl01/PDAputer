@@ -54,6 +54,7 @@ extern const lv_img_dsc_t img_heart;
 extern const lv_img_dsc_t img_icon_calendar;
 extern const lv_img_dsc_t img_icon_note;
 extern const lv_img_dsc_t img_icon_remote;
+extern const lv_img_dsc_t img_icon_terminal;
 
 #ifndef EXT_IMG_DESC_T
 #define EXT_IMG_DESC_T
@@ -63,7 +64,7 @@ typedef struct _ext_img_desc_t {
 } ext_img_desc_t;
 #endif
 
-extern const ext_img_desc_t images[47];
+extern const ext_img_desc_t images[48];
 
 #ifdef __cplusplus
 }

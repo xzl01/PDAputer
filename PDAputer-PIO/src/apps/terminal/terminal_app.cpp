@@ -604,7 +604,7 @@ void TerminalApp::handleEnter() {
         return;
     }
 
-        snprintf(_echo_buf, sizeof(_echo_buf), "$ %s", _input_buf);
+    snprintf(_echo_buf, sizeof(_echo_buf), "$ %s", _input_buf);
     printLine(_echo_buf);
 
     if (_mode == TerminalMode::TELNET) {
@@ -737,7 +737,7 @@ void TerminalApp::handleEnter() {
         } else if (strncmp(_input_buf, "echo ", 5) == 0) {
             printLine(_input_buf + 5);
         } else {
-                        snprintf(_unknown_cmd_buf, sizeof(_unknown_cmd_buf), "unknown: %s", _input_buf);
+            snprintf(_unknown_cmd_buf, sizeof(_unknown_cmd_buf), "unknown: %s", _input_buf);
             printLine(_unknown_cmd_buf);
         }
         clearInput();
@@ -861,7 +861,7 @@ void TerminalApp::backendSend(const char* str, int len) {
             break;
         case TerminalMode::TELNET:
             if (_net_connected && _telnet_client.connected()) {
-                                int n = len < (int)sizeof(_telnet_cmd_buf) - 2 ? len : sizeof(_telnet_cmd_buf) - 2;
+                int n = len < (int)sizeof(_telnet_cmd_buf) - 2 ? len : sizeof(_telnet_cmd_buf) - 2;
                 memcpy(_telnet_cmd_buf, str, n);
                 _telnet_cmd_buf[n] = '\r'; _telnet_cmd_buf[n+1] = '\n';
                 _telnet_client.write((const uint8_t*)_telnet_cmd_buf, n + 2);
@@ -911,7 +911,7 @@ bool TerminalApp::backendConnected() {
 void TerminalApp::telnetConnect(const char* host, uint16_t port) {
     telnetDisconnect();
 
-        snprintf(_info_buf, sizeof(_info_buf), "Connecting to %s:%d...", host, port);
+    snprintf(_info_buf, sizeof(_info_buf), "Connecting to %s:%d...", host, port);
     printLine(_info_buf);
 
     if (_telnet_client.connect(host, port)) {
@@ -952,7 +952,7 @@ void TerminalApp::sshConnect(const char* host, const char* user, uint16_t port, 
     ssh_options_set(_ssh_session, SSH_OPTIONS_LOG_VERBOSITY, &verbosity);
 
     if (ssh_connect(_ssh_session) != SSH_OK) {
-                snprintf(_ssh_err_buf, sizeof(_ssh_err_buf), "[SSH] Connect failed: %s", ssh_get_error(_ssh_session));
+        snprintf(_ssh_err_buf, sizeof(_ssh_err_buf), "[SSH] Connect failed: %s", ssh_get_error(_ssh_session));
         printLine(_ssh_err_buf);
         sshDisconnect();
         updateStatus();
@@ -961,7 +961,7 @@ void TerminalApp::sshConnect(const char* host, const char* user, uint16_t port, 
 
     int auth = ssh_userauth_password(_ssh_session, user, password);
     if (auth != SSH_AUTH_SUCCESS) {
-                snprintf(_ssh_err_buf, sizeof(_ssh_err_buf), "[SSH] Auth failed: %s", ssh_get_error(_ssh_session));
+        snprintf(_ssh_err_buf, sizeof(_ssh_err_buf), "[SSH] Auth failed: %s", ssh_get_error(_ssh_session));
         printLine(_ssh_err_buf);
         sshDisconnect();
         updateStatus();
@@ -979,7 +979,7 @@ void TerminalApp::sshConnect(const char* host, const char* user, uint16_t port, 
     if (ssh_channel_open_session(_ssh_channel) != SSH_OK ||
         ssh_channel_request_pty_size(_ssh_channel, "xterm", 80, 24) != SSH_OK ||
         ssh_channel_request_shell(_ssh_channel) != SSH_OK) {
-                snprintf(_ssh_err_buf, sizeof(_ssh_err_buf), "[SSH] Shell failed: %s", ssh_get_error(_ssh_session));
+        snprintf(_ssh_err_buf, sizeof(_ssh_err_buf), "[SSH] Shell failed: %s", ssh_get_error(_ssh_session));
         printLine(_ssh_err_buf);
         sshDisconnect();
         updateStatus();
