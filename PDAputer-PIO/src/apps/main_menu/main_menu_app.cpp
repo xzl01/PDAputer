@@ -33,17 +33,17 @@ static const int RAW_TO_SLOT[] = { 3, 4, 5, -1, -1, -1, -1, -1, -1, 1, 2 };
 // App definitions
 // ============================================================
 static const AppDef APP_DEFS[] = {
-    { "Notes",     0xff2a1800, 0xffffcc66 },  // 0 - default
-    { "Music",     0xff002b4a, 0xff55b4ff },  // 1
-    { "Terminal",  0xff0a2800, 0xff2ef900 },  // 2
-    { "FM Radio",  0xff2c1e00, 0xffffaa00 },  // 3
-    { "AI Chat",   0xff4f0f21, 0xffff9b9d },  // 4
-    { "Games",     0xff3a0830, 0xffff7acd },  // 5
-    { "LoRa Chat", 0xff282b00, 0xffd8e800 },  // 6
-    { "GPS",       0xff001758, 0xff98b0ff },  // 7
-    { "Calendar",  0xff0a2800, 0xff2ef900 },  // 8
-    { "Remote",    0xff2b2b2b, 0xffffffff },  // 9
-    { "Settings",  0xff002c2d, 0xff03ffee },  // 10
+    { "Notes",      0xff2a1800, 0xffffcc66 },  // 0 - default
+    { "Music",      0xff002b4a, 0xff55b4ff },  // 1
+    { "Web Radio",  0xff0a2800, 0xff2ef900 },  // 2
+    { "FM Radio",   0xff2c1e00, 0xffffaa00 },  // 3
+    { "Terminal",   0xff0a2800, 0xff2ef900 },  // 4
+    { "Games",      0xff3a0830, 0xffff7acd },  // 5
+    { "LoRa Chat",  0xff282b00, 0xffd8e800 },  // 6
+    { "GPS",        0xff001758, 0xff98b0ff },  // 7
+    { "Calendar",   0xff0a2800, 0xff2ef900 },  // 8
+    { "Remote",     0xff2b2b2b, 0xffffffff },  // 9
+    { "Settings",   0xff002c2d, 0xff03ffee },  // 10
 };
 
 // Label default X position and bounce offset
@@ -68,9 +68,9 @@ void MainMenuApp::onCreate() {
     // Map LVGL objects to icon array (matches APP_DEFS order)
     _icons[0] = objects.main_image_app_notes;
     _icons[1] = objects.main_image_app_music;
-    _icons[2] = objects.main_image_app_terminal;
+    _icons[2] = objects.main_image_app_webradio;
     _icons[3] = objects.main_image_app_fmradio;
-    _icons[4] = objects.main_image_app_ai;
+    _icons[4] = objects.main_image_app_terminal;
     _icons[5] = objects.main_image_app_games;
     _icons[6] = objects.main_image_app_lorachat;
     _icons[7] = objects.main_image_app_gps;
